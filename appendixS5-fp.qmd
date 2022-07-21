@@ -1,0 +1,48 @@
+---
+title: "Appendix S5. Extended multievent model: Excluding false-positives"
+author: | 
+  | Matthijs Hollanders & J. Andrew Royle
+  |
+  | Manuscript title: Know what you don't know: Embracing state uncertainty in disease-structured multistate models
+format:
+  pdf:
+    toc: false
+editor_options:
+  chunk_output_type: console
+bibliography: multievent.bib
+csl: methods-in-ecology-and-evolution.csl
+nocite: 
+geometry: margin = 1in
+font: 11pt
+execute:
+  output: false
+  warning: false
+  message: false
+header-includes: |
+  \usepackage{titling}
+  \pretitle{\begin{flushleft}\Large\bfseries}
+  \posttitle{\end{flushleft}}  
+  \preauthor{\begin{flushleft}\large}
+  \postauthor{\end{flushleft}} 
+  \usepackage{float}
+  \floatplacement{figure}{H}
+  \usepackage[bf]{caption}
+  \newcommand{\beginsupplement}{
+    \setcounter{table}{0} 
+    \renewcommand{\thetable}{S\arabic{table}}
+    \setcounter{figure}{0} 
+    \renewcommand{\thefigure}{S\arabic{figure}}}
+---
+
+```{r}
+#| echo: false
+
+options(scipen = 999, digits = 3)
+```
+
+\newpage
+\beginsupplement
+
+In addition to the full multievent model with both false-positives in the sampling pathogen detection ($\delta_{21}$) and the diagnostic pathogen detection ($\lambda_{21}$), we ran models with false-positives in only one of the two processes or in neither of them. Excluding false-positives assumes that every positive qPCR run reflects a truly infected sample and individual, so higher estimates of infection prevalence in the unmarked population ($\pi$) would be expected from these models. Additionally, because these models assume fewer state assignment errors occur, the rates of gaining and clearing infections were also expected to be affected. @fig-posteriors2 shows the parameter estimates for these models compared with the full multievent model with both false-positives included.
+
+![Posterior distributions (median and 95% HDI) of parameters estimated from the novel multievent model fitted to the juvenile *M. fleayi* data with both false-positives included, false-positives only included in one of the processes, or no false-positives included. Hazard rates (apparent mortality and infection state transitions) are on weekly time scales.](figs/posteriors2.jpg){#fig-posteriors2}
