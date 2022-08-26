@@ -9,3 +9,5 @@ This repo was primarily created so that users would have direct access to the R 
   - Hollanders, M., and J. Andrew Royle. 2022. Know what you don't know: Embracing state uncertainty in disease-structured multistate models, Dataset. Dryad. https://doi.org/10.5061/dryad.s7h44j19h.
 
 The Quarto document `multievent-fleayi.qmd` contains all the code to manipulate this capture history, analyse the data with the multievent model and a traditional Arnason-Schwarz model, and to create the figures. MCMC output is included in the folders `mcmc-samples` and `mcmc-trace`. Note that in addition to the MCMC draws and summaries for the multievent and Arnason-Schwarz models, there is also output for the multievent model without false-positives in the sampling process (`MEdraws-del0`), diagnostic process (`MEdraws-lam0`), and without any false-positives (`MEdraws-dellam0`).
+
+The manuscript file is included as `multievent-manuscript.qmd`.
