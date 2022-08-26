@@ -687,10 +687,11 @@ MSdraws <- read_csv("mcmc-samples/MSdraws.csv")
 MSsummary <- read_csv("mcmc-samples/MSsum.csv")
 MEsummary <- read_csv("mcmc-samples/MEsum.csv")
 
-# These files are the runs with some false-positives, not shown here
-#MEsummaryDL <- read_csv("mcmc-samples/MEsum-dellam.csv")
-#MEsummaryD <- read_csv("mcmc-samples/MEsum-del.csv")
-#MEsummaryL <- read_csv("mcmc-samples/MEsum-lam.csv")
+# These files are the runs with some false-positives, not shown here,
+# but available on GitHub
+#MEsummaryDL <- read_csv("mcmc-samples/MEsum-dellam0.csv")
+#MEsummaryD <- read_csv("mcmc-samples/MEsum-del0.csv")
+#MEsummaryL <- read_csv("mcmc-samples/MEsum-lam0.csv")
 m <- tibble(load = read_csv("m.csv")[!is.na(loads.ind)])
 n <- tibble(load = array(simplify2array(read_csv("n.csv")), c(n.ind, n.prim, n.sec))[!is.na(loads.sample)])
 ```
@@ -734,7 +735,9 @@ posteriors <-
 ggsave("posteriors.jpg", posteriors, width = 3, height = 2.5, units = "in", dpi = 600)
 ```
 
-## This one requires other model runs (without false-positives) not shown here
+## Without false-positives
+
+This one requires other model runs (without false-positives) not shown here, but the saved MCMC samples are on GitHub.
 
 ```{r}
 # Create tibble

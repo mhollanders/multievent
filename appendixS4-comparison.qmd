@@ -37,7 +37,7 @@ options(scipen = 999, digits = 3)
 
 # Introduction
 
-We simulate multistate mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two alive states using R 4.2.0 [@rcoreteam2022]. We generate two types of capture histories: (1) robust design, with multiple secondary surveys during primary occasions of assumed closure [@pollock1982], and (2) "traditional", consisting of a series of single surveys. We use Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.3 [@devalpine2017; @devalpine2022] to analyze each capture history. We then examine the traceplots and effective sample sizes of each model, demonstrating that estimation of robust design formulations is superior to traditional designs.
+We simulate multistate mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two alive states using R 4.2.1 [@rcoreteam2022]. We generate two types of capture histories: (1) robust design, with multiple secondary surveys during primary occasions of assumed closure [@pollock1982], and (2) "traditional", consisting of a series of single surveys. We use Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017; @devalpine2022] to analyze each capture history. We then examine the traceplots and effective sample sizes of each model, demonstrating that estimation of robust design formulations is superior to traditional designs.
 
 # Simulating data
 

@@ -49,7 +49,7 @@ We simulate individuals experiencing changes in their in ecological states (*z*)
 
 ## Input parameters
 
-We specify the sampling condition and define parameter values for the simulation. 
+We specify the sampling condition and define parameter values for the simulation.
 
 ```{r}
 # Number of ecological (z, latent), observed (o, latent), and diagnostic (y) states
@@ -594,8 +594,8 @@ params <- c(pi, phi1, phi2.alpha, phi.beta, psi12, psi21, p1, p2,
 
 # Traceplots and summary
 library(MCMCvis)
-MCMCtrace(MEsamples$samples, params = MEmons, Rhat = T, n.eff = T, ind = T, pdf = F,
-          gvals = params, priors = rbeta(n.chains * n.iter, 1, 1))
+MCMCtrace(MEsamples$samples, params = MEmons, Rhat = T, n.eff = T, ind = T, 
+          pdf = F, gvals = params, priors = rbeta(n.chains * n.iter, 1, 1))
 MEsum <- 
   MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:n.burnin),]), 
               params = MEmons, HPD = T) |>

@@ -37,9 +37,9 @@ options(scipen = 999, digits = 3)
 
 # Introduction
 
-In the first section, we simulate multievent mark-recapture Jolly-Seber [@jolly1965; @seber1965; @pradel2005; @royle2012] data for animals with two pathogen infection states using R 4.2.0 [@rcoreteam2022]. We simulate the ecological process, consisting of survival and infection state transitions, in discrete-time with probabilities. The observation process is simulated according to the robust design with multiple secondary surveys during primary occasions of assumed closure. For each capture during a secondary survey, samples (e.g., swabs) are collected from individuals to detect the pathogen, which happens imperfectly. Each sample is subjected to multiple diagnostic runs (e.g., qPCR), which also features imperfect pathogen detection, yielding infection status (binary) and infection intensity (continuous) data. We finish by conducting some data wrangling which may be useful for practitioners using their own data.
+In the first section, we simulate multievent mark-recapture Jolly-Seber [@jolly1965; @seber1965; @pradel2005; @royle2012] data for animals with two pathogen infection states using R 4.2.1 [@rcoreteam2022]. We simulate the ecological process, consisting of survival and infection state transitions, in discrete-time with probabilities. The observation process is simulated according to the robust design with multiple secondary surveys during primary occasions of assumed closure. For each capture during a secondary survey, samples (e.g., swabs) are collected from individuals to detect the pathogen, which happens imperfectly. Each sample is subjected to multiple diagnostic runs (e.g., qPCR), which also features imperfect pathogen detection, yielding infection status (binary) and infection intensity (continuous) data. We finish by conducting some data wrangling which may be useful for practitioners using their own data.
 
-In the second section, we demonstrate how to analyze datasets with Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.3 [@devalpine2017; @devalpine2022]. We write the model code in the NIMBLE dialect of the BUGS language (which is easily adapted to work in BUGS or JAGS), generate suitable initial values for latent ecological and observed states, and condense the diagnostic run infection intensities to "long" format. We then run the MCMC, show traceplots and summary statistics, and plot the parameter estimates with the simulated values. 
+In the second section, we demonstrate how to analyze datasets with Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017; @devalpine2022]. We write the model code in the NIMBLE dialect of the BUGS language (which is easily adapted to work in BUGS or JAGS), generate suitable initial values for latent ecological and observed states, and condense the diagnostic run infection intensities to "long" format. We then run the MCMC, show traceplots and summary statistics, and plot the parameter estimates with the simulated values. 
 
 \newpage
 
@@ -628,8 +628,8 @@ params <- c(pi, phi1, phi2.alpha, phi.beta, psi12, psi21, p1, p2,
 
 # Traceplots and summary
 library(MCMCvis)
-MCMCtrace(MEsamples, params = MEmons, excl = c("b", "prev"), Rhat = T, n.eff = T, ind = T, pdf = F,
-          gvals = c(params, Nsuper), priors = rbeta(n.chains * n.iter, 1, 1))
+MCMCtrace(MEsamples, params = MEmons, excl = c("b", "prev"), Rhat = T, n.eff = T, ind = T, 
+          pdf = F, gvals = c(params, Nsuper), priors = rbeta(n.chains * n.iter, 1, 1))
 MEsum <- 
   MCMCsummary(lapply(MEsamples, function(x) x[-(1:n.burnin),]),
               params = MEmons, HPD = T) |>

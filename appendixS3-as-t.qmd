@@ -33,13 +33,20 @@ header-includes: |
 #| echo: false
 
 options(scipen = 999, digits = 3)
+
+# Change font size of code chunks
+def.chunk.hook <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  paste0("\n \\", "footnotesize","\n\n", x, "\n\n \\normalsize")
+})
 ```
 
 \newpage
 
 # Introduction
 
-In the first section, we simulate multievent mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two pathogen infection states using R 4.2.0 [@rcoreteam2022]. We simulate the ecological process, consisting of survival and infection state transitions, in discrete-time. The observation process is simulated with single surveys instead of the robust design. During each survey, multiple samples (e.g., swabs) are collected from individuals to detect the pathogen, which happens imperfectly. Each sample is subjected to multiple diagnostic runs (e.g., qPCR), which also features imperfect pathogen detection, yielding infection status (binary) and infection intensity (continuous) data.
+In the first section, we simulate multievent mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two pathogen infection states using R 4.2.1 [@rcoreteam2022]. We simulate the ecological process, consisting of survival and infection state transitions, in discrete-time. The observation process is simulated with single surveys instead of the robust design. During each survey, multiple samples (e.g., swabs) are collected from individuals to detect the pathogen, which happens imperfectly. Each sample is subjected to multiple diagnostic runs (e.g., qPCR), which also features imperfect pathogen detection, yielding infection status (binary) and infection intensity (continuous) data.
 
 This model differs from the robust design formulation in that the *observation process* of the robust design, consisting of both the recapture and the sampling pathogen detection probabilities, is now split into two separate processes (note that matrix multiplication of the two transition probability matrices [TPMs] below yields the observation process of the robust design). First, there is the recapture process where the observed state ($o$) of individual $i$ during survey $t$ is conditional on the ecological state ($z_{it}$):
 
@@ -71,7 +78,7 @@ Then in the sampling process, the sample state ($s$) of individual $i$, survey $
 \end{center}
 ```
 
-In the second section, we demonstrate how to analyze datasets with Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.3 [@devalpine2017; @devalpine2022]. We write the model code in the NIMBLE dialect of the BUGS language (which is easily adapted to work in BUGS or JAGS), generate suitable initial values for latent ecological, observed, and sample states, and condense the diagnostic run infection intensities to "long" format. We then run the MCMC, show traceplots and summary statistics, and plot the parameter estimates with the simulated values. 
+In the second section, we demonstrate how to analyze datasets with Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017; @devalpine2022]. We write the model code in the NIMBLE dialect of the BUGS language (which is easily adapted to work in BUGS or JAGS), generate suitable initial values for latent ecological, observed, and sample states, and condense the diagnostic run infection intensities to "long" format. We then run the MCMC, show traceplots and summary statistics, and plot the parameter estimates with the simulated values. 
 
 We created this document with the intention to show that the observation process with single surveys is unable to recover input parameter values, unlike the robust design. We postulate that the model structure has issues with identifiability and/or multimodality.
 
@@ -610,8 +617,8 @@ params <- c(pi, phi1, phi2.alpha, phi.beta, psi12, psi21, p1, p2,
 
 # Traceplots and summary
 library(MCMCvis)
-MCMCtrace(MEsamples, params = MEmons, Rhat = T, n.eff = T, ind = T, pdf = F,
-          gvals = params, priors = rbeta(n.chains * n.iter, 1, 1))
+MCMCtrace(MEsamples, params = MEmons, Rhat = T, n.eff = T, ind = T, 
+          pdf = F, gvals = params, priors = rbeta(n.chains * n.iter, 1, 1))
 MEsum <- 
   MCMCsummary(lapply(MEsamples, function(x) x[-(1:n.burnin),]),
               params = MEmons, HPD = T) |>
