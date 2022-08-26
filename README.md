@@ -2,7 +2,7 @@
 
 This repository contains data and code for the novel extended multievent model presented in:
 
-  Hollanders, M. and J. Andrew Royle. 2022. Know what you don't know: Embracing state uncertainty in       disease-structured multistate models. *Methods in Ecology and Evolution*.
+  - Hollanders, M. and J. Andrew Royle. 2022. Know what you don't know: Embracing state uncertainty in       disease-structured multistate models. *Methods in Ecology and Evolution*.
 
 This repo was primarily created so that users would have direct access to the R code, given that the appendices in the Supporting Information of the manuscript are in PDF form. Appendices 1--4 are identical to those in the manuscript. Additionally, the repo contains the *Mixophyes fleayi* capture history used as a case study in the manuscript. For details on that dataset, see the README in the Dryad repository:
 
