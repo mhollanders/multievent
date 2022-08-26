@@ -37,7 +37,7 @@ options(scipen = 999, digits = 3)
 
 # Introduction
 
-We simulate multistate mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two alive states using R 4.2.0 [@rcoreteam2022]. We generate two types of capture histories: (1) robust design, with multiple secondary surveys during primary occasions of assumed closure [@pollock1982], and (2) "traditional", consisting of a series of single surveys. We use Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017] to analyze each capture history. We then examine the traceplots and effective sample sizes of each model, demonstrating that estimation of robust design formulations is superior to traditional designs.
+We simulate multistate mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two alive states using R 4.2.0 [@rcoreteam2022]. We generate two types of capture histories: (1) robust design, with multiple secondary surveys during primary occasions of assumed closure [@pollock1982], and (2) "traditional", consisting of a series of single surveys. We use Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.3 [@devalpine2017; @devalpine2022] to analyze each capture history. We then examine the traceplots and effective sample sizes of each model, demonstrating that estimation of robust design formulations is superior to traditional designs.
 
 # Simulating data
 
@@ -94,19 +94,19 @@ first.t <- sort(sample(1:(n.prim * n.sec - 1), n.ind, replace = T))
 library(nimble)
 
 # Simulation
-for(i in 1:n.ind){
+for (i in 1:n.ind) {
   
   # ROBUST DESIGN
   
   # Ecological and observed state at first capture
   z.rd[i,first.rd[i]] <- y.rd[i,first.rd[i],1] <- rcat(1, c(1 - pi, pi))
   
-  for(t in (first.rd[i] + 1):n.prim){
+  for (t in (first.rd[i] + 1):n.prim) {
     
     # Ecological process
     z.rd[i,t] <- rcat(1, TPM.z[z.rd[i,t-1],])
     
-    for(k in 1:n.sec){
+    for (k in 1:n.sec) {
       
       # Observation process
       y.rd[i,t,k] <- rcat(1, TPM.o[z.rd[i,t],])
@@ -119,7 +119,7 @@ for(i in 1:n.ind){
   # Ecological and observed state at first capture
   z.t[i,first.t[i]] <- y.t[i,first.t[i]] <- rcat(1, c(1 - pi, pi))
   
-  for(t in (first.t[i] + 1):(n.prim * n.sec)){
+  for (t in (first.t[i] + 1):(n.prim * n.sec)) {
     
     # Ecological process
     z.t[i,t] <- rcat(1, TPM.z[z.t[i,t-1],])
@@ -185,17 +185,17 @@ rdMScode <- nimbleCode({
 
   # LIKELIHOOD
     
-  for(i in 1:n.ind){
+  for (i in 1:n.ind) {
     
     # Ecological state at first capture
     z[i,first[i]] <- y[i,first[i],1]
 
-    for(t in (first[i] + 1):n.prim){
+    for (t in (first[i] + 1):n.prim) {
       
       # Ecological process
       z[i,t] ~ dcat(TPM.z[z[i,t-1],1:3])
       
-      for(k in 1:n.sec){
+      for (k in 1:n.sec) {
         
         # Observation process
         y[i,t,k] ~ dcat(TPM.o[z[i,t],1:3])
@@ -257,12 +257,12 @@ tMScode <- nimbleCode({
 
   # LIKELIHOOD
     
-  for(i in 1:n.ind){
+  for (i in 1:n.ind) {
     
     # Ecological state at first capture
     z[i,first[i]] <- y[i,first[i]]
 
-    for(t in (first[i] + 1):n.surv){
+    for (t in (first[i] + 1):n.surv) {
       
       # Ecological process
       z[i,t] ~ dcat(TPM.z[z[i,t-1],1:3])
@@ -285,8 +285,7 @@ We first run the robust design and summarize the posterior distributions of mode
 monitors <- c("phi1", "phi2", "psi12", "psi21", "p1", "p2")
 
 # Number of chains and iterations
-nchains <- 3
-niter <- 3000
+n.chains <- 3 ; n.iter <- 3000
 
 # Robust design
 rdMSstart <- Sys.time()
@@ -298,8 +297,8 @@ rdMSdraws <- nimbleMCMC(code = rdMScode,
                         data = list(y = y.rd),
                         inits = list(z = z.rd),
                         monitors = monitors,
-                        nchains = nchains,
-                        niter = niter)
+                        nchains = n.chains,
+                        niter = n.iter)
 rdMSend <- Sys.time()
 ```
 
@@ -323,8 +322,8 @@ tMSdraws <- nimbleMCMC(code = tMScode,
                        data = list(y = y.t),
                        inits = list(z = z.t),
                        monitors = monitors,
-                       nchains = nchains,
-                       niter = niter)
+                       nchains = n.chains,
+                       niter = n.iter)
 tMSend <- Sys.time()
 ```
 
@@ -345,7 +344,7 @@ We see that mixing is much better in the robust design formulation, even with on
 #| output: true
 
 # Prior for parameters for PPO
-prior <- rbeta(niter, 1, 1)
+prior <- rbeta(n.iter, 1, 1)
 
 # Robust design
 MCMCtrace(rdMSdraws, params = monitors, gvals = c(phi1, phi2, psi12, psi21, p1, p2), 
@@ -375,26 +374,18 @@ theme_update(axis.ticks = element_line(color = "#333333"),
              text = element_text(color = "#333333"),
              axis.text = element_text(color = "#333333"))
 
-# Combine summaries
-MSsum <- tibble(rbind(rdMSsum, tMSsum))
-
-# Axis limits
-ax.break <- round(max(MSsum$n.eff / 100) / 4) * 100
-ax.lim <- floor(max(MSsum$n.eff) / ax.break) * ax.break
-
 # Plot
-MSsum %>%
+n.param <- 6
+tibble(rbind(rdMSsum, tMSsum)) %>%
   mutate(parameter = factor(rep(monitors, 2), levels = monitors),
-         model = factor(c(rep("Robust design", 6), rep("Traditional", 6)))) %>%
+         model = factor(c(rep("Robust design", n.param), rep("Traditional", n.param)))) %>%
   ggplot(aes(x = parameter)) +
   geom_col(aes(y = n.eff, fill = model),
            alpha = 3/4,
            position = position_dodge()) +
-  scale_y_continuous(breaks = seq(ax.break, ax.lim, ax.break),
-                     limits = c(0, max(MSsum$n.eff) + 100),
-                     expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, NA)) +
   scale_fill_manual(values = c("#a4260f", "grey50")) +
-  labs(title = paste0("Effective sample sizes after ", nchains * niter, " MCMC samples"),
+  labs(title = paste0("Effective sample sizes after ", n.chains * n.iter, " MCMC samples"),
        subtitle = "Robust design (red) vs. single survey (grey) multistate Arnason-Schwarz model",
        x = "Parameter",
        y = "Effective sample size") +

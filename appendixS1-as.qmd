@@ -39,7 +39,7 @@ options(scipen = 999, digits = 3)
 
 In the first section, we simulate multievent mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two pathogen infection states using R 4.2.0 [@rcoreteam2022]. We simulate the ecological process, consisting of survival and infection state transitions, in continuous-time with hazard rates and unequal time intervals [@glennie2022]. The observation process is simulated according to the robust design with multiple secondary surveys during primary occasions of assumed closure. For each capture during a secondary survey, samples (e.g., swabs) are collected from individuals to detect the pathogen, which happens imperfectly. Each sample is subjected to multiple diagnostic runs (e.g., qPCR), which also features imperfect pathogen detection, yielding infection status (binary) and infection intensity (continuous) data.
 
-In the second section, we demonstrate how to analyze datasets with Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017]. We write the model code in the NIMBLE dialect of the BUGS language (which is easily adapted to work in BUGS or JAGS), generate suitable initial values for latent ecological and observed states, and condense the diagnostic run infection intensities to "long" format. We then run the MCMC, show traceplots and summary statistics, and plot the parameter estimates with the simulated values.
+In the second section, we demonstrate how to analyze datasets with Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.3 [@devalpine2017; @devalpine2022]. We write the model code in the NIMBLE dialect of the BUGS language (which is easily adapted to work in BUGS or JAGS), generate suitable initial values for latent ecological and observed states, and condense the diagnostic run infection intensities to "long" format. We then run the MCMC, show traceplots and summary statistics, and plot the parameter estimates with the simulated values.
 
 \newpage
 
@@ -49,7 +49,7 @@ We simulate individuals experiencing changes in their in ecological states (*z*)
 
 ## Input parameters
 
-We specify the sampling condition and define parameter values for the simulation. Note that we define hazard rates for survival and infection state transitions from underlying probabilities.
+We specify the sampling condition and define parameter values for the simulation. 
 
 ```{r}
 # Number of ecological (z, latent), observed (o, latent), and diagnostic (y) states
@@ -65,25 +65,25 @@ tau <-                   # Primary occasion intervals
 
 # Parameters
 pi <- 0.4                # Probability of entering the study as infected
-phi1 <- -log(0.9)        # Mortality hazard rate if uninfected
-phi2.alpha <- -log(0.9)  # Mortality hazard rate if infected (intercept)
-phi2.beta <- 0.3         # Effect of one "unit" of pathogen on mortality hazard (log hazard)
-psi12 <- -log(1 - 0.6)   # Hazard rate of gaining infection (force-of-infection)
-psi21 <- -log(1 - 0.4)   # Hazard rate of clearing infection
+phi1 <- 0.1              # Mortality hazard rate if uninfected
+phi2.alpha <- 0.1        # Mortality hazard rate if infected (intercept)
+phi.beta <- 0.3          # Effect of one "unit" of pathogen on mortality hazard (log hazard)
+psi12 <- 1.0             # Hazard rate of gaining infection (force-of-infection)
+psi21 <- 0.5             # Hazard rate of clearing infection
 p1 <- 0.6                # Recapture probability if uninfected
 p2 <- 0.7                # Recapture probability if infected
 r.delta <- 0.4           # Probability of detecting one "unit" of pathogen on a sample
 delta21 <- 0.05          # False-positive probability of sampling process (e.g., swab)
 r.lambda <- 0.6          # Probability of detecting one "unit" of pathogen on a diagnostic run 
 lambda21 <- 0.10         # False-positive probability of diagnostic process (e.g., qPCR)
-mu <- 4                  # Average population infection intensity
+mu <- 4.0                # Average population infection intensity
 mu.sigma <-              # Population, sampling process, and diagnostic process infection 
   c(0.4, 0.3, 0.2)       # intensity standard deviations
 ```
 
 ## Transition probability matrices
 
-We start with creating the transition probability matrices (TPMs) of the ecological, observation, and diagnostic processes. We create the ecological process TPM by taking the matrix exponential of the transition rate matrix (TRM) multiplied by the (unequal) primary occasion intervals [@miller2008; @conn2012; @goulet2021; @glennie2022]. The TRM consists of survival and infection state transitions parameterized as hazard rates, and we simulate the mortality hazard rate of infected individuals (${\phi_2}_{i,t}$) as a log-linear function of infection intensity [@ergon2018]. We simulate the pathogen detection probabilities (${\delta_{22}}_{i,t}$ and ${\lambda_{22}}_{i,t}$) following abundance-induced heterogeneity models [@royle2003; @lachish2012]. Note that, because Arnason-Schwarz models condition on first capture, we do not model the capture probabilities within the first primary occasion. For the secondaries in that primary that an individual was captured, the observation process consists solely of the sample pathogen detection process, analogous to fixing these capture probabilities to 1.
+We start with creating the transition probability matrices (TPMs) of the ecological, observation, and diagnostic processes. We create the ecological process TPM by taking the matrix exponential of the transition rate matrix (TRM) multiplied by the (unequal) primary occasion intervals [@miller2008; @conn2012; @goulet2021; @glennie2022]. The TRM consists of mortality rates and rates of infection state transitions, and we simulate the mortality hazard rate of infected individuals (${\phi_2}_{it}$) as a log-linear function of infection intensity [@ergon2018]. We simulate the pathogen detection probabilities (${\delta_{22}}_{it}$ and ${\lambda_{22}}_{it}$) following abundance-induced heterogeneity models [@royle2003; @lachish2012]. Note that, because Arnason-Schwarz models condition on first capture, we do not model the capture probabilities within the first primary occasion. For the secondaries in that primary that an individual was captured, the observation process consists solely of the sample pathogen detection process, analogous to fixing these capture probabilities to 1.
 
 ```{r}
 # Arrays for ecological, observation, and diagnostic process TRM/TPMs
@@ -91,7 +91,7 @@ TRM.z <- TPM.z <- array(NA, c(n.states, n.states, n.ind, n.prim - 1))
 TPM.o <- array(NA, c(n.states, n.states, n.ind, n.prim))
 TPM.d <- array(NA, c(n.states, n.states, n.ind, n.prim, n.sec))
 
-# Arrays for survival, pathogen detection, and infection intensities
+# Arrays for mortality, pathogen detection, and infection intensities
 phi2 <- array(NA, c(n.ind, n.prim - 1))
 m <- delta22 <- array(NA, c(n.ind, n.prim))
 n <- lambda22 <- array(NA, c(n.ind, n.prim, n.sec))
@@ -100,8 +100,8 @@ n <- lambda22 <- array(NA, c(n.ind, n.prim, n.sec))
 first <- sort(sample(1:(n.prim - 1), n.ind, replace = T))
 
 # TPMs
-for(i in 1:n.ind){
-  for(t in first[i]:n.prim){
+for (i in 1:n.ind) {
+  for (t in first[i]:n.prim) {
     
     # Individual infection intensity (lognormal)
     m[i,t] <- rlnorm(1, log(mu), mu.sigma[1])
@@ -118,10 +118,10 @@ for(i in 1:n.ind){
              0,                       0,                   1),
            nrow = n.states, ncol = n.states, byrow = T)
   
-  for(t in first[i]:(n.prim - 1)){
+  for (t in first[i]:(n.prim - 1)) {
     
     # Mortality hazard rate as a function of infection intensity
-    phi2[i,t] <- exp(log(phi2.alpha) + phi2.beta * m[i,t])
+    phi2[i,t] <- exp(log(phi2.alpha) + phi.beta * m[i,t])
     
     # Ecological process TRM (transition rate matrix)
     TRM.z[,,i,t] <- 
@@ -142,8 +142,8 @@ for(i in 1:n.ind){
 
   } # t
   
-  for(t in first[i]:n.prim){
-    for(k in 1:n.sec){
+  for (t in first[i]:n.prim) {
+    for (k in 1:n.sec) {
       
       # Sample infection intensity
       n[i,t,k] <- rnorm(1, m[i,t], mu.sigma[2])
@@ -165,7 +165,7 @@ for(i in 1:n.ind){
 
 ## Generating capture histories
 
-We run the simulation, which yields the two 4-dimensional capture histories (*y* and *x*) that we use as data for the model.
+We run the simulation, which yields the 4-dimensional capture histories (*y*) and associated infection intensities (*x*) that we use as data for the model.
 
 ```{r}
 # Arrays for ecological, observed, and diagnostic states, and infection intensities
@@ -180,7 +180,7 @@ first.sec <- sample(1:n.sec, n.ind, replace = T)
 library(nimble)
 
 # Simulation
-for(i in 1:n.ind){
+for (i in 1:n.ind) {
   
   # Ecological state at first capture
   z[i,first[i]] <- rcat(1, c(1 - pi, pi))
@@ -189,18 +189,18 @@ for(i in 1:n.ind){
   o[i,first[i],first.sec[i]] <- rcat(1, TPM.o[z[i,first[i]],,i,first[i]])
   
   # Not seen during other secondaries
-  for(k in 1:n.sec){
-    if(is.na(o[i,first[i],k])){
+  for (k in 1:n.sec) {
+    if (is.na(o[i,first[i],k])) {
       o[i,first[i],k] <- 3
     }
   } # k
   
-  for(t in (first[i] + 1):n.prim){
+  for (t in (first[i] + 1):n.prim) {
     
     # Ecological process
     z[i,t] <- rcat(1, TPM.z[z[i,t-1],,i,t-1])
     
-    for(k in 1:n.sec){
+    for (k in 1:n.sec) {
       
       # Observation process
       o[i,t,k] <- rcat(1, TPM.o[z[i,t],,i,t])
@@ -208,15 +208,15 @@ for(i in 1:n.ind){
     } # k
   } # t
   
-  for(t in first[i]:n.prim){
-    for(k in 1:n.sec){
-      for(l in 1:n.diag){
+  for (t in first[i]:n.prim) {
+    for (k in 1:n.sec) {
+      for (l in 1:n.diag) {
         
         # Diagnostic process
         y[i,t,k,l] <- rcat(1, TPM.d[o[i,t,k],,i,t,k])
         
         # Diagnostic run infection intensity
-        if(y[i,t,k,l] == 2){
+        if (y[i,t,k,l] == 2) {
           x[i,t,k,l] <- rnorm(1, n[i,t,k], mu.sigma[3])
         }
         
@@ -246,7 +246,7 @@ MEcode <- nimbleCode({
   pi.alpha ~ dbeta(1, 1)
   phi1.alpha ~ dexp(1)
   phi2.alpha ~ dexp(1)
-  phi2.beta ~ dt(0, sigma = 1, df = 1)
+  phi.beta ~ dt(0, sigma = 1, df = 1)
   psi12.alpha ~ dexp(1)
   psi21.alpha ~ dexp(1)
   p1.alpha ~ dbeta(1, 1)
@@ -258,28 +258,28 @@ MEcode <- nimbleCode({
   
   # Infection intensity
   mu.alpha ~ dt(mu.prior, sigma = 1, df = 1)
-  for(i in 1:3){
+  for (i in 1:3) {
     mu.sigma[i] ~ T(dt(0, sigma = 1, df = 1), 0, )
   }
   
   # PARAMETERS
     
-  for(i in 1:n.ind){
+  for (i in 1:n.ind) {
     
     # Probability of entering as infected
     pi[i] <- pi.alpha
     
-    for(t in first[i]:(n.prim - 1)){
+    for (t in first[i]:(n.prim - 1)) {
       
       # Mortality hazard rates
       phi1[i,t] <- phi1.alpha
-      log(phi2[i,t]) <- log(phi2.alpha) + phi2.beta * m[i,t]
+      log(phi2[i,t]) <- log(phi2.alpha) + phi.beta * m[i,t]
       
       # Infection state transition hazard rates
       psi12[i,t] <- psi12.alpha
       psi21[i,t] <- psi21.alpha
       
-      for(k in 1:n.sec){
+      for (k in 1:n.sec) {
         
         # Recapture probabilities
         p1[i,t+1,k] <- p1.alpha
@@ -292,7 +292,7 @@ MEcode <- nimbleCode({
     p1[i,first[i],1:n.sec] <- p.first[i,first[i],1:n.sec]
     p2[i,first[i],1:n.sec] <- p.first[i,first[i],1:n.sec]
     
-    for(t in first[i]:n.prim){
+    for (t in first[i]:n.prim) {
       
       # Population infection intensity
       mu[i,t] <- mu.alpha
@@ -305,7 +305,7 @@ MEcode <- nimbleCode({
       # Sample pathogen detection
       delta22[i,t] <- 1 - (1 - r.delta) ^ m[i,t]
       
-      for(k in 1:n.sec){
+      for (k in 1:n.sec) {
         
         # Sample infection intensity
 #        n[i,t,k] ~ dnorm(m[i,t], sd = mu.sigma[2])    # Centered parameterization
@@ -326,7 +326,7 @@ MEcode <- nimbleCode({
     TPM.z.first[1,i] <- 1 - pi[i]  # Enters as uninfected
     TPM.z.first[2,i] <- pi[i]      # Enters as infected
     
-    for(t in first[i]:(n.prim - 1)){
+    for (t in first[i]:(n.prim - 1)) {
       
       # Transition rate matrix
       
@@ -367,8 +367,8 @@ MEcode <- nimbleCode({
 
     } # t
     
-    for(t in first[i]:n.prim){
-      for(k in 1:n.sec){
+    for (t in first[i]:n.prim) {
+      for (k in 1:n.sec) {
               
         # OBSERVATION PROCESS (recapture and sample pathogen detection)
         
@@ -412,20 +412,20 @@ MEcode <- nimbleCode({
     # Ecological state at first capture
     z[i,first[i]] ~ dcat(TPM.z.first[1:2,i])
 
-    for(t in (first[i] + 1):n.prim){
+    for (t in (first[i] + 1):n.prim) {
       
       # Ecological process
       z[i,t] ~ dcat(TPM.z[z[i,t-1],1:3,i,t-1])
 
     } # t
     
-    for(t in first[i]:n.prim){
-      for(k in 1:n.sec){  
+    for (t in first[i]:n.prim) {
+      for (k in 1:n.sec) {  
         
         # Observation process
         o[i,t,k] ~ dcat(TPM.o[z[i,t],1:3,i,t,k])
         
-        for(l in 1:n.diag){
+        for (l in 1:n.diag) {
           
           # Diagnostic process
           y[i,t,k,l] ~ dcat(TPM.d[o[i,t,k],1:3,i,t,k])
@@ -437,12 +437,12 @@ MEcode <- nimbleCode({
   
   # INFECTION INTENSITY
   
-  for(j in 1:n.x){
+  for (j in 1:n.x) {
 
     # Likelihood
     x[j] ~ dnorm(n[ind[j],prim[j],sec[j]], sd = mu.sigma[3])
     
-  } # j
+  }
   
 })
 ```
@@ -453,7 +453,7 @@ We generate suitable initial values for latent ecological (*z*) and observed (*o
 
 ```{r}
 # Lowest observed state per individual per primary
-observed <- apply(y, c(1, 2), function(x) min(x, na.rm = T))
+observed <- apply(y, 1:2, function(x) min(x, na.rm = T))
 
 # First and last captures
 first.cap <- apply(observed, 1, function(x) min(which(x < 3)))
@@ -461,9 +461,9 @@ last.cap <- apply(observed, 1, function(x) max(which(x < 3)))
 
 # Observed states
 o.init <- array(NA, c(n.ind, n.prim, n.sec))
-for(i in 1:n.ind){
-  for(t in first.cap[i]:n.prim){
-    for(k in 1:n.sec){
+for (i in 1:n.ind) {
+  for (t in first.cap[i]:n.prim) {
+    for (k in 1:n.sec) {
       o.init[i,t,k] <- 
         # If missing survey, individual is "not captured"
         ifelse(length(which(is.na(y[i,t,k,]))) == n.diag, 3,
@@ -477,8 +477,8 @@ for(i in 1:n.ind){
 
 # Ecological states
 z.init <- array(NA, c(n.ind, n.prim))
-for(i in 1:n.ind){
-  for(t in first.cap[i]:last.cap[i]){
+for (i in 1:n.ind) {
+  for (t in first.cap[i]:last.cap[i]) {
     z.init[i,t] <- 
       # If not captured during primary, randomly assign an alive state
       ifelse(min(o.init[i,t,]) == 3, sample(1:2, 1),
@@ -486,9 +486,9 @@ for(i in 1:n.ind){
              max(o.init[i,t,][o.init[i,t,] < 3]))
   } # t
   # If not captured during the last survey
-  if(last.cap[i] < n.prim){
+  if (last.cap[i] < n.prim) {
     # Assign "dead" state after last capture
-    for(t in (last.cap[i] + 1):n.prim){
+    for (t in (last.cap[i] + 1):n.prim) {
       z.init[i,t] <- 3
     } # t
   }
@@ -500,9 +500,11 @@ for(i in 1:n.ind){
 We convert our 4-dimensional infection intensity array (*x*) into tidy ("long") format without NAs to improve MCMC mixing and speed.
 
 ```{r}
-x.long <- na.omit(reshape2::melt(x,
-                                 value.name = "x", 
-                                 varnames = c("ind", "prim", "sec", "diag")))
+x.long <- 
+  reshape2::melt(x,
+                 value.name = "x", 
+                 varnames = c("ind", "prim", "sec", "diag")) |>
+  na.omit()
 ```
 
 ## Data, constants, initial values, and parameters to monitor
@@ -518,7 +520,7 @@ str(MEdata <- list(y = y,
                    constraint = 1))
 
 # Constants
-mu.prior <- mean(log(x), na.rm = T)
+mu.prior <- median(log(x), na.rm = T)
 str(MEconsts <- list(# Multievent
                      n.ind = dim(y)[1],
                      n.prim = dim(y)[2],
@@ -526,7 +528,7 @@ str(MEconsts <- list(# Multievent
                      n.diag = dim(y)[4],
                      tau = tau,
                      first = first.cap,
-                     p.first = apply(o.init, c(1:3), function(x) length(which(x < 3))),
+                     p.first = apply(o.init, 1:3, function(x) length(which(x < 3))),
                      
                      # Infection intensity
                      n.x = nrow(x.long),
@@ -537,17 +539,14 @@ str(MEconsts <- list(# Multievent
 
 # Initial values for latent states, pathogen detection, and infection intensity
 MEinits <- list(z = z.init, o = o.init,
-                r.delta = 3/4, delta21 = 1/4,
-                r.lambda = 3/4, lambda21 = 1/4,
+                r.delta = runif(1, 0.5, 1), delta21 = runif(1, 0, 0.5),
+                r.lambda = runif(1, 0.5, 1), lambda21 = runif(1, 0, 0.5),
                 mu.alpha = mu.prior, mu.sigma = runif(3))
 
 # Parameters to monitor
-MEmons <- c("pi.alpha", 
-            "phi1.alpha", "phi2.alpha", "phi2.beta", 
-            "psi12.alpha", "psi21.alpha", 
-            "p1.alpha", "p2.alpha", 
-            "r.delta", "delta21", 
-            "r.lambda", "lambda21",
+MEmons <- c("pi.alpha", "phi1.alpha", "phi2.alpha", "phi.beta", 
+            "psi12.alpha", "psi21.alpha", "p1.alpha", "p2.alpha", 
+            "r.delta", "delta21", "r.lambda", "lambda21",
             "mu.alpha", "mu.sigma")
 ```
 
@@ -567,10 +566,8 @@ MEmcmc <- buildMCMC(MEconf)
 cMEmcmc <- compileNimble(MEmcmc, project = cMEmodel)
 
 # Run MCMC
-nchains <- 3
-niter <- 5000
-nburnin <- 1000
-MEsamples <- runMCMC(cMEmcmc, nchains = nchains, niter = niter, thin2 = 5)
+n.chains <- 3 ; n.iter <- 5000 ; n.burnin <- 1000 ; n.thin = 5
+MEsamples <- runMCMC(cMEmcmc, nchains = n.chains, niter = n.iter, thin2 = n.thin)
 MEend <- Sys.time()
 ```
 
@@ -586,26 +583,28 @@ MEend - MEstart
 
 ## Traceplots and summary statistics
 
-We see that parameters mix well and that convergence is achieved quickly [@youngflesh2018mcmcvis], with low percent overlap between the prior and posterior distributions (PPO), suggestive of good identifiability [@gimenez2009]. Note that for `MCMCsummary`, we omitted the first `r nburnin` MCMC samples as burn-in. The red horizontal lines in the density plots are Beta(1, 1) priors, which were used for all probabilities, and the red dashed lines mark the simulation input parameter values. 
+We see that parameters mix well and that convergence is achieved quickly [@youngflesh2018mcmcvis], with low percent overlap between the prior and posterior distributions (PPO), suggestive of good identifiability [@gimenez2009]. Note that for `MCMCsummary`, we omitted the first `r n.burnin` MCMC samples as burn-in. The red horizontal lines in the density plots are Beta(1, 1) priors, which were used for all probabilities, and the red dashed lines mark the simulation input parameter values. 
 
 ```{r}
 #| output: true
 
 # Parameters
-params <- c(pi, phi1, phi2.alpha, phi2.beta, psi12, psi21, p1, p2, 
+params <- c(pi, phi1, phi2.alpha, phi.beta, psi12, psi21, p1, p2, 
             r.delta, delta21, r.lambda, lambda21, log(mu), mu.sigma)
 
 # Traceplots and summary
 library(MCMCvis)
 MCMCtrace(MEsamples$samples, params = MEmons, Rhat = T, n.eff = T, ind = T, pdf = F,
-          gvals = params, priors = rbeta(nchains * niter, 1, 1))
-print(MEsum <- MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:nburnin),]),
-                           params = MEmons, HPD = T))
+          gvals = params, priors = rbeta(n.chains * n.iter, 1, 1))
+MEsum <- 
+  MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:n.burnin),]), 
+              params = MEmons, HPD = T) |>
+  print()
 ```
 
 ## Posterior distributions
 
-The input values of the simulation are recovered well within the posterior distributions of model parameters. We summarized posteriors as medians and 95% highest density intervals (HDIs) after omitting the first `r nburnin` MCMC samples as burn-in.
+The input values of the simulation are recovered well within the posterior distributions of model parameters. We summarized posteriors as medians and 95% highest posterior density intervals (HPDIs) after omitting the first `r n.burnin` MCMC samples as burn-in.
 \ 
 
 ```{r}
@@ -622,20 +621,15 @@ theme_update(axis.ticks = element_line(color = "#333333"),
              axis.text = element_text(color = "#333333"))
 
 # Parameter names
-params.names <- c("pi", "phi1", "phi2.alpha", "phi2.beta", "psi12", "psi21", "p1", "p2", 
-                  "r.delta", "delta21", "r.lambda", "lambda21", "log(mu)", "mu.sigma[1]",
+params.names <- c("pi", "phi1", "phi2.alpha", "phi.beta", "psi12", "psi21", "p1", "p2", 
+                  "r.delta", "delta21", "r.lambda", "lambda21", "(log) mu", "mu.sigma[1]",
                   "mu.sigma[2]", "mu.sigma[3]")
 
-# Axis limits
-ax.break <- 0.5
-ax.start <- min(floor(MEsum$`95%_HPDL` / ax.break) * ax.break)
-ax.end <- max(ceiling(MEsum$`95%_HPDU` / ax.break) * ax.break)
-
 # Plot
-MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:nburnin),]),
-            round = 3, params = MEmons, func = median, HPD = T) %>%
+MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:n.burnin),]),
+            round = 3, params = MEmons, func = median, HPD = T) |>
   mutate(parameter = factor(params.names, levels = params.names),
-         sim = params) %>%
+         sim = params) |>
   ggplot(aes(x = parameter)) +
   geom_hline(yintercept = 0,
              linetype = "dashed",
@@ -647,12 +641,10 @@ MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:nburnin),]),
   geom_point(aes(y = sim),
              shape = 16,
              color = "#a4260f",
-             alpha = 0.8,
+             alpha = 4/5,
              position = position_nudge(x = -0.15)) +
-  scale_y_continuous(breaks = seq(ax.start, ax.end, ax.break),
-                     limits = c(0, ax.end)) +
   labs(title = "Parameter estimates",
-       subtitle = "Posterior distributions (median and 95% HDI, black) with input (red)",
+       subtitle = "Posterior distributions (median and 95% HPDI, black) with input (red)",
        x = "Parameter",
        y = "Estimate") +
   coord_flip() +
@@ -661,11 +653,11 @@ MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:nburnin),]),
 
 ## Infection intensities
 
-We also assess how well infection intensities are recovered by the model. First, for each secondary that a recaptured individual returned at least one positive diagnostic run, we collect the true values and extract the estimates (posterior medians) for individual and sample infection intensities.
+We also assess how well infection intensities are recovered by the model. First, for each secondary that a recaptured individual returned at least one positive diagnostic run, we collect the true values and extract the estimates (posterior modes) for individual and sample infection intensities.
 
 ```{r}
 # Burn-in for intensities
-nburnin2 <- 200
+n.burnin2 <- n.burnin / n.thin
 
 # True sample intensities of observed individuals
 n.true <- n[o.init == 2]
@@ -674,20 +666,22 @@ n.true <- n[o.init == 2]
 MEsamples2 <- lapply(MEsamples$samples2, function(x) ifelse(is.na(x), 0, x))
 
 # Estimated sample intensities of observed individuals
-n.est <- array(MCMCsummary(lapply(MEsamples2, function(x) x[-(1:nburnin2),]),
-                           params = "n")$`50%`,
-               c(n.ind, n.prim, n.sec))[o.init == 2]
+n.est <- 
+  array(MCMCsummary(lapply(MEsamples2, function(x) x[-(1:n.burnin2),]), 
+                    params = "n")$`50%`,
+        c(n.ind, n.prim, n.sec))[o.init == 2]
 
 # Observed infected individuals 
-z.est <- apply(o.init, c(1, 2), function(x) max(x[x < 3]))
+z.est <- apply(o.init, 1:2, function(x) max(x[x < 3]))
 
 # True individual intensities of observed individuals
 m.true <- m[z.est == 2]
 
 # Estimated individual intensities of observed individuals
-m.est <- array(MCMCsummary(lapply(MEsamples2, function(x) x[-(1:nburnin2),]),
-                           params = "m")$`50%`,
-               c(n.ind, n.prim))[z.est == 2]
+m.est <- 
+  array(MCMCsummary(lapply(MEsamples2, function(x) x[-(1:n.burnin2),]), 
+                    params = "m")$`50%`,
+        c(n.ind, n.prim))[z.est == 2]
 ```
 
 We plot posterior medians against true infection intensities for individuals and samples. The diagonal lines indicate perfect agreement between posteriors and the true values.
@@ -710,8 +704,8 @@ ax.lim <- floor(max(n.true, na.rm = T) / ax.break) * ax.break
 
 # Individual
 m.plot <-
-  loads %>%
-  filter(type == "Individual") %>%
+  loads |>
+  filter(type == "Individual") |>
   ggplot(aes(x = true, y = estimated)) +
   geom_abline(alpha = 1/2) +
   geom_point(color = "#df5a00",
@@ -730,8 +724,8 @@ m.plot <-
 
 # Sample
 n.plot <-
-  loads %>%
-  filter(type == "Sample") %>%
+  loads |>
+  filter(type == "Sample") |>
   ggplot(aes(x = true, y = estimated)) +
   geom_abline(alpha = 1/2) +
   geom_point(color = "#023059",

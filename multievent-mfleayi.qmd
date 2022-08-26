@@ -1,0 +1,866 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+# Packages
+
+```{r}
+library(tidyverse)
+library(reshape2)
+library(ggdist)
+library(ggtext)
+library(nimble)
+library(MCMCvis)
+library(patchwork)
+```
+
+# Read data and capture histories
+
+```{r}
+n.ind <- 116
+n.prim <- 8
+n.sec <- 2
+n.diag <- 4
+n.surv <- n.prim * n.sec
+ch <- array(unlist(read.csv("data/ch.csv", header = F)), c(n.ind, n.prim * n.sec * n.diag))
+```
+
+## Multievent
+
+```{r}
+# Multievent
+ch.me <- aperm(array(ch, dim = c(n.ind, n.diag, n.sec, n.prim)), c(1, 4, 3, 2))
+x.me <- y.me <- ch.me
+y.me[y.me > 0] <- 2 ; y.me[y.me == 0] <- 1 ; y.me[y.me == -1] <- 3
+x.me[x.me <= 0] <- NA
+x.me <- log10(x.me)
+
+# Observed individual and sample loads
+loads.sample <- apply(x.me, c(1:3), function(x) mean(x, na.rm = T))
+loads.ind <- apply(loads.sample, c(1, 2), function(x) mean(x, na.rm = T))
+```
+
+## Multistate
+
+```{r}
+# Multistate
+ch.ms <- aperm(array(ch, dim = c(n.ind, n.diag, n.surv)), c(1, 3, 2))
+x.ms <- y.ms <- apply(ch.ms, c(1, 2), function(x) mean(x, na.rm = T))
+y.ms[x.ms > 0] <- 2 ; y.ms[y.ms == 0] <- 1 ; y.ms[y.ms == -1] <- 3 ; y.ms[is.nan(y.ms)] <- NA
+x.ms[x.ms <= 0] <- NA
+x.ms <- log10(x.ms)
+apply(ch.ms, 1, function(x) length(which(x > -1)))
+```
+
+# Initial values 
+
+## Multievent: observed and ecological state, and diagnostic runs
+
+```{r}
+# Lowest observed state per individual per primary
+observed <- apply(y.me, c(1, 2), function(x) min(x, na.rm = T))
+
+# First and last captures
+first.me <- apply(observed, 1, function(x) min(which(x < 3)))
+last.me <- apply(observed, 1, function(x) max(which(x < 3)))
+
+# Observed states
+o.init.me <- array(NA, c(n.ind, n.prim, n.sec))
+for(i in 1:n.ind){
+  for(t in first.me[i]:n.prim){
+    for(k in 1:n.sec){
+      o.init.me[i,t,k] <- 
+        # If missing survey, individual is "not captured"
+        ifelse(length(which(is.na(y.me[i,t,k,]))) == n.diag, 3,
+               # If no diagnostic runs, individual is "not captured"
+               ifelse(min(y.me[i,t,k,], na.rm = T) == 3, 3,
+                      # Otherwise, assign highest observed diagnostic state
+                      max(y.me[i,t,k,][y.me[i,t,k,] < 3], na.rm = T)))
+    } # k
+  } # t
+} # i
+
+# Ecological  states
+z.init.me <- array(NA, c(n.ind, n.prim))
+for(i in 1:n.ind){
+  for(t in first.me[i]:last.me[i]){
+    z.init.me[i,t] <- 
+      # If not captured during primary, randomly assign an alive state
+      ifelse(min(o.init.me[i,t,]) == 3, sample(1:2, 1),
+             # If captured, assign highest observed state
+             max(o.init.me[i,t,][o.init.me[i,t,] < 3]))
+  } # t
+  # If not captured during the last survey
+  if(last.me[i] < n.prim){
+    # Assign "dead" state after last capture
+    for(t in (last.me[i] + 1):n.prim){
+      z.init.me[i,t] <- 3
+    } # t
+  }
+} # i
+
+# Diagnostic runs per individual per secondary survey
+n.runs <- apply(y.me, c(1,2,3), function(x) length(which(x < 3)))
+n.runs[n.runs == 0] <- 1
+```
+
+## Multistate: ecological state only
+
+```{r}
+# First capture
+first.ms <- apply(y.ms, 1, function(x) min(which(x != 3)))
+last.ms <- apply(y.ms, 1, function(x) max(which(x != 3)))
+
+# Ecological state for multistate data
+z.init.ms <- array(NA, c(n.ind, n.surv))
+for(i in 1:n.ind){
+  for(t in first.ms[i]:last.ms[i]){
+    z.init.ms[i,t] <- ifelse(y.ms[i,t] == 3 | is.na(y.ms[i,t]), 1, y.ms[i,t])
+  } # t
+  if(last.ms[i] < n.surv){
+    for(t in (last.ms[i] + 1):n.surv){
+      z.init.ms[i,t] <- 3
+    } # t
+  }
+} # i
+```
+
+# Models
+
+## Multievent
+
+### NIMBLE code
+
+```{r}
+MEcode <- nimbleCode({
+  
+  # PRIORS
+  
+  # Constrain false-positive and true-positive rates to avoid multimodality
+  constraint ~ dconstraint(delta21 < r.delta & lambda21 < r.lambda)
+  
+  # RJMCMC
+  rj <- 0.5
+  
+  # Multievent
+  pi.alpha ~ dbeta(1, 1)
+  phi1.alpha ~ dexp(1)
+  phi2.alpha <- phi1.alpha
+  phi.beta ~ dt(0, sigma = 1, df = 1)
+  psi12.alpha ~ dexp(1)
+  psi21.alpha ~ dexp(1)
+  p1.alpha ~ dbeta(1, 1)
+  p2.alpha ~ dbeta(1, 1)
+  p.sigma ~ T(dt(0, sigma = 1, df = 1), 0, )
+  r.delta ~ dbeta(1, 1)
+  delta21 ~ dbeta(1, 1)  
+  r.lambda ~ dbeta(1, 1)
+  lambda21 ~ dbeta(1, 1)  
+  
+  # Infection intensity
+  mu.alpha ~ dt(mu.prior, sigma = 1, df = 1)
+  for(i in 1:3){
+    mu.sigma[i] ~ T(dt(0, sigma = 1, df = 1), 0, )
+  }
+  
+  # Random temporal effects (recapture)
+  for(t in 1:(n.prim - 1)){
+    for(k in 1:n.sec){
+      p.z[t,k] ~ dnorm(0, 1)
+      p.eps[t,k] <- p.z[t,k] * p.sigma
+    }
+  }
+  
+  # PARAMETERS
+    
+  for(i in 1:n.ind){
+    
+    # Probability of entering as infected
+    pi[i] <- pi.alpha
+    
+    for(t in first[i]:(n.prim - 1)){
+      
+      # Apparent mortality hazard rates
+      phi1[i,t] <- phi1.alpha
+      log(phi2[i,t]) <- log(phi2.alpha) + phi.beta * m[i,t]
+      
+      # Infection state transition hazard rates
+      psi12[i,t] <- psi12.alpha
+      psi21[i,t] <- psi21.alpha
+      
+      for(k in 1:n.sec){
+        
+        # Recapture probabilities
+        logit(p1[i,t+1,k]) <- logit(p1.alpha) + p.eps[t,k]
+        logit(p2[i,t+1,k]) <- logit(p2.alpha) + p.eps[t,k]
+        
+      } # k
+    } # t
+      
+    # Recapture probabilities at first capture
+    p1[i,first[i],1:n.sec] <- p.first[i,first[i],1:n.sec]
+    p2[i,first[i],1:n.sec] <- p.first[i,first[i],1:n.sec]
+    
+    for(t in first[i]:n.prim){
+      
+      # Population infection intensity
+      mu[i,t] <- mu.alpha
+      
+      # Individual infection intensity (lognormal)
+#      m.z[i,t] ~ dnorm(0, 1)
+#      log(m[i,t]) <- mu[i,t] + m.z[i,t] * mu.sigma[1]  # Non-centered parameterization
+      log(m[i,t]) ~ dnorm(mu[i,t], sd = mu.sigma[1])  # Centered parameterization
+      
+      # Sample pathogen detection
+      delta22[i,t] <- 1 - (1 - r.delta) ^ m[i,t]
+      
+      for(k in 1:n.sec){
+        
+        # Sample infection intensity
+        n.z[i,t,k] ~ dnorm(0, 1)
+        n[i,t,k] <- m[i,t] + n.z[i,t,k] * mu.sigma[2]  # Non-centered parameterization
+#        n[i,t,k] ~ dnorm(m[i,t], sd = mu.sigma[2])    # Centered parameterization
+        
+        # Diagnostic pathogen detection
+        lambda22[i,t,k] <- 1 - (1 - r.lambda) ^ n[i,t,k]
+        
+      } # k
+    } # t
+    
+    # ECOLOGICAL PROCESS (apparent survival and state transitions)
+    
+    # First capture
+    TPM.z.first[1,i] <- 1 - pi[i]  # Alive, uninfected
+    TPM.z.first[2,i] <- pi[i]      # Alive, infected
+    
+    for(t in first[i]:(n.prim - 1)){
+      
+      # Alive, uninfected
+      TRM.z[1,1,i,t] <- -(psi12[i,t] + phi1[i,t])  # Survives, remains uninfected
+      TRM.z[1,2,i,t] <- psi12[i,t]                 # Survives, becomes infected
+      TRM.z[1,3,i,t] <- phi1[i,t]                  # Dies
+      
+      # Alive, infected
+      TRM.z[2,1,i,t] <- psi21[i,t]                 # Survives, becomes uninfected
+      TRM.z[2,2,i,t] <- -(psi21[i,t] + phi2[i,t])  # Survives, remains infected
+      TRM.z[2,3,i,t] <- phi2[i,t]                  # Dies
+      
+      # Dead
+      TRM.z[3,1,i,t] <- 0                          # Survives, remains uninfected
+      TRM.z[3,2,i,t] <- 0                          # Survives, becomes infected 
+      TRM.z[3,3,i,t] <- 0                          # Remains dead
+      
+      # Matrix of eigenvectors of TRM.z
+      V[1:3,1:3,i,t] <- eigen(TRM.z[1:3,1:3,i,t])$vectors  
+      
+      # Diagonal matrix of eigenvalues of TRM.z
+      D[1:3,1:3,i,t] <- diag(eigen(TRM.z[1:3,1:3,i,t])$values)
+      
+      # Matrix exponential of D * primary occasion intervals
+      expDtau[1,1,i,t] <- exp(D[1,1,i,t] * tau)
+      expDtau[1,2,i,t] <- 0
+      expDtau[1,3,i,t] <- 0
+      expDtau[2,1,i,t] <- 0
+      expDtau[2,2,i,t] <- exp(D[2,2,i,t] * tau)
+      expDtau[2,3,i,t] <- 0
+      expDtau[3,1,i,t] <- 0
+      expDtau[3,2,i,t] <- 0
+      expDtau[3,3,i,t] <- exp(D[3,3,i,t] * tau) 
+      
+      # Transition probability matrix
+      TPM.z[1:3,1:3,i,t] <- V[1:3,1:3,i,t] %*% expDtau[1:3,1:3,i,t] %*% inverse(V[1:3,1:3,i,t])
+      
+    } # t
+    for(t in first[i]:n.prim){
+      for(k in 1:n.sec){
+        
+        # OBSERVATION PROCESS (recapture and sample pathogen detection)
+
+        # Alive, uninfected
+        TPM.o[1,1,i,t,k] <- p1[i,t,k] * (1 - delta21)       # Seen, uninfected (true -)
+        TPM.o[1,2,i,t,k] <- p1[i,t,k] * delta21             # Seen, infected (false +)
+        TPM.o[1,3,i,t,k] <- 1 - p1[i,t,k]                   # Not seen
+      
+        # Alive, infected
+        TPM.o[2,1,i,t,k] <- p2[i,t,k] * (1 - delta22[i,t])  # Seen, uninfected (false -)
+        TPM.o[2,2,i,t,k] <- p2[i,t,k] * delta22[i,t]        # Seen, infected (true +)
+        TPM.o[2,3,i,t,k] <- 1 - p2[i,t,k]                   # Not seen
+      
+        # Dead
+        TPM.o[3,1,i,t,k] <- 0                               # Seen, uninfected
+        TPM.o[3,2,i,t,k] <- 0                               # Seen, infected
+        TPM.o[3,3,i,t,k] <- 1                               # Not seen
+    
+        # DIAGNOSTIC PROCESS (diagnostic pathogen detection)
+        
+        # Seen, uninfected
+        TPM.d[1,1,i,t,k] <- 1 - lambda21         # Diagnostic run, uninfected (true -)
+        TPM.d[1,2,i,t,k] <- lambda21             # Diagnostic run, infected (false +)
+        TPM.d[1,3,i,t,k] <- 0                    # No diagnostic run
+        
+        # Seen, infected
+        TPM.d[2,1,i,t,k] <- 1 - lambda22[i,t,k]  # Diagnostic run, uninfected (false -)
+        TPM.d[2,2,i,t,k] <- lambda22[i,t,k]      # Diagnostic run, infected (true +)
+        TPM.d[2,3,i,t,k] <- 0                    # No diagnostic run
+        
+        # Not seen
+        TPM.d[3,1,i,t,k] <- 0                    # Diagnostic run, uninfected
+        TPM.d[3,2,i,t,k] <- 0                    # Diagnostic run, infected
+        TPM.d[3,3,i,t,k] <- 1                    # No diagnostic run 
+        
+      } # k
+    } # t
+    
+    # LIKELIHOOD
+    
+    # Ecological state at first capture
+    z[i,first[i]] ~ dcat(TPM.z.first[1:2,i])
+
+    for(t in (first[i] + 1):n.prim){
+      
+      # Ecological process
+      z[i,t] ~ dcat(TPM.z[z[i,t-1],1:3,i,t-1])
+
+    } # t
+    
+    for(t in first[i]:n.prim){
+      for(k in 1:n.sec){  
+        
+        # Observation process
+        o[i,t,k] ~ dcat(TPM.o[z[i,t],1:3,i,t,k])
+        
+        for(l in 1:n.diag[i,t,k]){
+          
+          # Diagnostic process
+          y[i,t,k,l] ~ dcat(TPM.d[o[i,t,k],1:3,i,t,k])
+          
+        } # l
+      } # k
+    } # t
+  } # i
+  
+  # INFECTION INTENSITY 
+  
+  for(j in 1:n.x){
+
+    # Likelihood
+    x[j] ~ dnorm(n[ind[j],prim[j],sec[j]], sd = mu.sigma[3])
+    
+  } # j
+  
+  # DERIVED QUANTITIES
+  
+  # Average mortality hazard rate of infected individuals
+  log(phi2.mu) <- log(phi2.alpha) + phi.beta * exp(mu.alpha)
+  
+  # Survey-specific recapture probabilities
+  for(t in 1:(n.prim - 1)){
+    for(k in 1:n.sec){
+      logit(p.mean[k,t]) <- logit(p1.alpha) + p.eps[t,k]
+    } # k
+  } # t
+  
+})
+```
+
+### Convert *x* data array with many NAs to long format
+
+```{r}
+x.long <- na.omit(reshape2::melt(x.me,
+                                 value.name = "x", 
+                                 varnames = c("ind", "prim", "sec", "diag")))
+```
+
+### Data, constant, initial values, and parameters to monitor
+
+```{r}
+# Data
+str(MEdata <- list(y = y.me,
+                   x = x.long$x,
+                   constraint = 1))
+
+# Constants
+mu.prior <- mean(log(x.me), na.rm = T)
+str(MEconsts <- list(# Multievent
+                     n.ind = dim(y.me)[1],
+                     n.prim = dim(y.me)[2],
+                     n.sec = dim(y.me)[3],
+                     n.diag = n.runs,
+                     first = first.me,
+                     p.first = apply(o.init.me, c(1,2,3), function(x) length(which(x < 3))),
+                     tau = 2,
+                     
+                     # Infection intensity
+                     n.x = nrow(x.long),
+                     ind = x.long$ind,
+                     prim = x.long$prim,
+                     sec = x.long$sec,
+                     mu.prior = mu.prior))
+
+# Inits
+MEinits <- function() list(z = z.init.me, o = o.init.me,
+                           r.delta = runif(1, 0.5, 1), delta21 = runif(1, 0, 0.5),
+                           r.lambda = runif(1, 0.5, 1), lambda21 = runif(1, 0, 0.5),
+                           mu.alpha = mu.prior, mu.sigma = rep(0.1, 3))
+
+# Parameters to monitor
+MEparents <- c("pi.alpha", 
+               "phi1.alpha", "phi2.alpha", "phi.beta",
+               "psi12.alpha", "psi21.alpha", 
+               "p1.alpha", "p2.alpha", "p.sigma",
+               "r.delta", "delta21",
+               "r.lambda", "lambda21",
+               "mu.alpha", "mu.sigma")
+MEderived <- c("phi2.mu", "p.mean")
+MEloads <- c("m", "n")
+```
+
+### Run model 
+
+```{r}
+# Model
+MEmodel <- nimbleModel(MEcode, MEconsts, MEdata, MEinits(), calculate = F, check = F)
+cMEmodel <- compileNimble(MEmodel)
+
+# MCMC
+MEconf <- configureMCMC(MEmodel, monitors = c(MEparents, MEderived), monitors2 = MEloads)
+MEmcmc <- buildMCMC(MEconf)
+cMEmcmc <- compileNimble(MEmcmc, project = cMEmodel, resetFunctions = T)
+
+# Run MCMC
+MEstart <- Sys.time()
+MEsamples <- runMCMC(cMEmcmc, nchains = 2, niter = 11000, nburnin = 1000, thin = 4, thin2 = 20)
+MEend <- Sys.time()
+print(MEtime <- MEend - MEstart)
+```
+
+## Multistate
+
+### NIMBLE code
+
+```{r}
+MScode <- nimbleCode({
+  
+  # PRIORS
+  
+  # Multievent
+  pi.alpha ~ dbeta(1, 1)
+  phi1.alpha ~ dexp(1)
+  phi2.alpha <- phi1.alpha
+  phi.beta ~ dt(0, sigma = 1, df = 1)
+  psi12.alpha ~ dexp(1)
+  psi21.alpha ~ dexp(1)
+  p1.alpha ~ dbeta(1, 1)
+  p2.alpha ~ dbeta(1, 1)
+  for(t in 1:(n.surv - 1)){
+    p.z[t] ~ dnorm(0, 1)
+    p.eps[t] <- p.z[t] * p.sigma
+  }
+  p.sigma ~ T(dt(0, sigma = 1, df = 1), 0, )
+  
+  # Infection intensity
+  mu.alpha ~ dt(1, sigma = 1, df = 1)
+  mu.sigma ~ T(dt(0, sigma = 1, df = 1), 0, )
+
+  for(i in 1:n.ind){
+  
+    # FUNCTIONS
+    
+    # Entering as infected
+    pi[i] <- pi.alpha
+    
+    for(t in first[i]:(n.surv - 1)){
+                        
+      # Mortality hazard rates
+      phi1[i,t] <- phi1.alpha
+      log(phi2[i,t]) <- log(phi2.alpha) + phi.beta * m[i,t]
+      
+      # Infection state transition hazard rates
+      psi12[i,t] <- psi12.alpha
+      psi21[i,t] <- psi21.alpha
+        
+      # Recapture
+      logit(p1[i,t]) <- logit(p1.alpha) + p.eps[t]
+      logit(p2[i,t]) <- logit(p2.alpha) + p.eps[t]
+      
+    } # t
+    
+    # ECOLOGICAL PROCESS
+    
+    # First capture
+    TPM.z.first[1,i] <- 1 - pi[i]
+    TPM.z.first[2,i] <- pi[i]
+    
+    for(t in first[i]:(n.surv - 1)){
+      
+      # Alive, uninfected
+      TRM.z[1,1,i,t] <- -(psi12[i,t] + phi1[i,t])  # Survives, remains uninfected
+      TRM.z[1,2,i,t] <- psi12[i,t]                 # Survives, becomes infected
+      TRM.z[1,3,i,t] <- phi1[i,t]                  # Dies
+      
+      # Alive, infected
+      TRM.z[2,1,i,t] <- psi21[i,t]                 # Survives, becomes uninfected
+      TRM.z[2,2,i,t] <- -(psi21[i,t] + phi2[i,t])  # Survives, remains infected
+      TRM.z[2,3,i,t] <- phi2[i,t]                  # Dies
+      
+      # Dead
+      TRM.z[3,1,i,t] <- 0                          # Survives, remains uninfected
+      TRM.z[3,2,i,t] <- 0                          # Survives, becomes infected 
+      TRM.z[3,3,i,t] <- 0                          # Remains dead
+      
+      # Matrix of eigenvectors of TRM.z
+      V[1:3,1:3,i,t] <- eigen(TRM.z[1:3,1:3,i,t])$vectors  
+      
+      # Diagonal matrix of eigenvalues of TRM.z
+      D[1:3,1:3,i,t] <- diag(eigen(TRM.z[1:3,1:3,i,t])$values)
+      
+      # Matrix exponential of D * primary occasion intervals
+      expDtau[1,1,i,t] <- exp(D[1,1,i,t] * tau)
+      expDtau[1,2,i,t] <- 0
+      expDtau[1,3,i,t] <- 0
+      expDtau[2,1,i,t] <- 0
+      expDtau[2,2,i,t] <- exp(D[2,2,i,t] * tau)
+      expDtau[2,3,i,t] <- 0
+      expDtau[3,1,i,t] <- 0
+      expDtau[3,2,i,t] <- 0
+      expDtau[3,3,i,t] <- exp(D[3,3,i,t] * tau) 
+      
+      # Transition probability matrix
+      TPM.z[1:3,1:3,i,t] <- V[1:3,1:3,i,t] %*% expDtau[1:3,1:3,i,t] %*% inverse(V[1:3,1:3,i,t])
+      
+      # OBSERVATION PROCESS
+        
+      # Alive, Bd-
+      TPM.o[1,1,i,t] <- p1[i,t]      # Seen, Bd-
+      TPM.o[1,2,i,t] <- 0            # Seen, Bd+
+      TPM.o[1,3,i,t] <- 1 - p1[i,t]  # Not seen
+      
+      # Alive, Bd+
+      TPM.o[2,1,i,t] <- 0            # Seen, Bd-
+      TPM.o[2,2,i,t] <- p2[i,t]      # Seen, Bd+
+      TPM.o[2,3,i,t] <- 1 - p2[i,t]  # Not seen
+      
+      # Dead
+      TPM.o[3,1,i,t] <- 0            # Seen, Bd-
+      TPM.o[3,2,i,t] <- 0            # Seen, Bd+
+      TPM.o[3,3,i,t] <- 1            # Not seen
+
+    } # t
+    
+    # LIKELIHOOD
+    
+    # Initial latent state
+    z[i,first[i]] <- y[i,first[i]]
+    y[i,first[i]] ~ dcat(TPM.z.first[1:2,i])
+
+    for(t in (first[i] + 1):n.surv){
+                      
+      # State process
+      z[i,t] ~ dcat(TPM.z[z[i,t-1],1:3,i,t-1])
+      
+      # Observation process
+      y[i,t] ~ dcat(TPM.o[z[i,t],1:3,i,t-1])
+
+    } # t
+  } # i
+  
+  # INFECTION INTENSITY
+  
+  for(i in 1:n.ind){
+    for(t in 1:n.surv){
+      
+      # Infection intensity imputation
+      m[i,t] ~ dlnorm(meanlog = mu.alpha, sdlog = mu.sigma) 
+      
+    } # t
+  } # i
+  
+  # DERIVED QUANTITIES
+  
+  # Average mortality hazard rate of infected individuals
+  log(phi2.mu) <- log(phi2.alpha) + phi.beta * exp(mu.alpha)
+  
+  # Average recapture
+  for(t in 1:(n.surv - 1)){
+    logit(p.mean[t]) <- logit(p1.alpha) + p.eps[t]
+  } # t
+
+})
+```
+
+### Data, constant, initial values, and parameters to monitor
+
+```{r}
+# Data
+str(MSdata <- list(y = y.ms,
+                   m = x.ms))
+
+# Constants 
+str(MSconsts <- list(n.ind = n.ind,
+                     n.surv = n.surv,
+                     first = first.ms,
+                     mu.prior = mu.prior,
+                     tau = 1))
+
+# Inits
+MSinits <- function() list(z = z.init.ms,
+                           #phi.beta = rnorm(1),
+                           mu.alpha = mu.prior, mu.sigma = runif(1))
+
+# Parameters to monitor
+MSparents <- c("pi.alpha", 
+               "phi1.alpha", "phi2.alpha", "phi.beta",
+               "psi12.alpha", "psi21.alpha", 
+               "p1.alpha", "p2.alpha", "p.sigma",
+               "mu.alpha", "mu.sigma")
+MSderived <- c("phi2.mu", "p.mean")
+```
+
+### Run model
+
+```{r}
+# Model
+MSmodel <- nimbleModel(MScode, MSconsts, MSdata, MSinits(), calculate = F, check = F)
+cMSmodel <- compileNimble(MSmodel)
+
+# MCMC
+MSconf <- configureMCMC(MSmodel, monitors = c(MSparents, MSderived))
+MSmcmc <- buildMCMC(MSconf)
+cMSmcmc <- compileNimble(MSmcmc, project = cMSmodel, resetFunctions = T)
+
+# Run MCMC
+MSstart <- Sys.time()
+MSsamples <- runMCMC(cMSmcmc, nchains = 4, niter = 11000, nburnin = 1000, thin = 4)
+MSend <- Sys.time()
+print(MStime <- MSend - MSstart)
+```
+
+## Save (samples, summaries, and traceplots)
+
+```{r}
+# Multievent
+MEdraws <- do.call(rbind, MEsamples$samples)
+write.csv(MEdraws, "mcmc-samples/MEdraws.csv", row.names = F)
+MEsamples2 <- lapply(MEsamples$samples2, function(x) ifelse(is.na(x), 0, x))
+m <- array(MCMCsummary(MEsamples2, params = "m")$`50%`, c(n.ind, n.prim))
+write.csv(m, "m.csv", row.names = F)
+n <- array(MCMCsummary(MEsamples2, params = "n")$`50%`, c(n.ind, n.prim, n.sec))
+write.csv(n, "n.csv", row.names = F)
+
+# Multistate
+MSdraws <- do.call(rbind, MSsamples)
+write.csv(MSdraws, "MSdraws.csv", row.names = F)
+
+# Summaries
+parameters <- c("phi1.alpha", "phi2.mu", "psi12.alpha", "psi21.alpha", "pi.alpha", "p1.alpha", "p2.alpha")
+print(MEsum <- MCMCsummary(MEsamples$samples, round = 3, HPD = T, func = median, params = parameters))
+write.csv(MEsum, "mcmc-samples/MEsum.csv")
+print(MSsum <- MCMCsummary(MSsamples, round = 3, HPD = T, func = median, params = parameters))
+write.csv(MSsum, "MSsum.csv")
+
+# Traceplots
+MCMCtrace(MEsamples$samples, Rhat = T, n.eff = T, ind = T, pdf = T, filename = "mcmc-trace/MEtrace")
+MCMCtrace(MSsamples, Rhat = T, n.eff = T, ind = T, pdf = T, filename = "mcmc-trace/MStrace")
+```
+
+# Figures
+
+Setup
+
+```{r}
+theme_set(theme_classic(base_size = 9, 
+                        base_family = "Helvetica"))
+theme_update(axis.ticks = element_line(color = "#333333", size = 0.31),
+             axis.line = element_line(color = "#333333"),
+             axis.title = element_text(color = "#333333"),
+             axis.text = element_markdown(color = "#333333"),
+             legend.title = element_text(color = "#333333"),
+             legend.text = element_text(color = "#333333"),
+             legend.position = "none",
+             strip.text = element_text(size = rel(1)),
+             strip.background = element_rect(color = NA))
+
+# Load data
+MEdraws <- read_csv("mcmc-samples/MEdraws.csv")
+MSdraws <- read_csv("mcmc-samples/MSdraws.csv")
+MSsummary <- read_csv("mcmc-samples/MSsum.csv")
+MEsummary <- read_csv("mcmc-samples/MEsum.csv")
+
+# These files are the runs with some false-positives, not shown here
+#MEsummaryDL <- read_csv("mcmc-samples/MEsum-dellam.csv")
+#MEsummaryD <- read_csv("mcmc-samples/MEsum-del.csv")
+#MEsummaryL <- read_csv("mcmc-samples/MEsum-lam.csv")
+m <- tibble(load = read_csv("m.csv")[!is.na(loads.ind)])
+n <- tibble(load = array(simplify2array(read_csv("n.csv")), c(n.ind, n.prim, n.sec))[!is.na(loads.sample)])
+```
+
+## Estimates of multievent vs. multistate
+
+```{r}
+# Create tibble
+all.sum <- 
+  tibble(rbind(MEsummary, MSsummary)) |>
+  mutate(parameter = factor(rep(parameters, 2), levels = parameters),
+         model = factor(c(rep("Multievent", 7), rep("Multistate", 7))))
+  
+# Figure
+posteriors <- 
+  all.sum |>
+  ggplot(aes(x = parameter)) +
+  geom_pointrange(aes(y = func, ymin = `95%_HPDL`, ymax = `95%_HPDU`, color = model),
+                  position = position_dodge(width = 0.5)
+                  ) +
+  geom_vline(xintercept = 4.5,
+             color = "#333333",
+             size = 0.2,
+             linetype = "dashed") +
+  scale_x_discrete(labels = c(expression(phi[1], phi[2], psi[12], psi[21], pi, italic(p)[1], italic(p)[2]))) +
+  scale_y_continuous(breaks = seq(0.5, 1.5, 0.5),
+                     limits = c(0, 1.75),
+                     expand = c(0, 0),
+                     sec.axis = sec_axis(trans = ~.,
+                                         name = "Probability",
+                                         breaks = seq(0.5, 1, 0.5))) +
+  scale_color_manual(values = c("#a4260f", "grey50")) +
+  labs(x = "Parameter",
+       y = "Hazard rate") +
+  guides(color = guide_legend(title = NULL,
+                              keyheight = 0.2, 
+                              keywidth = 0.1,
+                              default.unit = "inch")) +
+  theme(legend.position = c(0.05, 0.95),
+        legend.justification = c("left", "top"))
+ggsave("posteriors.jpg", posteriors, width = 3, height = 2.5, units = "in", dpi = 600)
+```
+
+## This one requires other model runs (without false-positives) not shown here
+
+```{r}
+# Create tibble
+all.sum <- 
+  tibble(rbind(MEsummary, MEsummaryL, MEsummaryD, MEsummaryDL)) |>
+  mutate(parameter = factor(rep(parameters, 4), levels = parameters),
+         model = factor(c(rep("All FP", 7), rep("FP lam", 7), rep("FP del", 7), rep("No FP", 7)),
+                        levels = c("All FP", "FP lam", "FP del", "No FP")))
+  
+# Figure
+posteriors <- 
+  all.sum |>
+  ggplot(aes(x = parameter)) +
+  geom_pointrange(aes(y = func, ymin = `95%_HPDL`, ymax = `95%_HPDU`, color = model),
+                  position = position_dodge(width = 0.5),
+                  size = 1/4
+                  ) +
+  geom_vline(xintercept = 4.5,
+             color = "#333333",
+             size = 0.2,
+             linetype = "dashed") +
+  scale_x_discrete(labels = c(expression(phi[1], phi[2], psi[12], psi[21], pi, italic(p)[1], italic(p)[2]))) +
+  scale_y_continuous(breaks = seq(0.5, 1.5, 0.5),
+                     limits = c(0, 1.75),
+                     expand = c(0, 0),
+                     sec.axis = sec_axis(trans = ~.,
+                                         name = "Probability",
+                                         breaks = seq(0.5, 1, 0.5))) +
+  scale_color_manual(values = c("#a4260f", "#abc9c8", "#72aeb6", "#2f70a1"),
+                     labels = c(expression(paste(lambda[21], ",", delta[21], " ~ Beta(1,1)"), paste(lambda[21], " = 0"), paste(delta[21], " = 0"), paste(lambda[21], ",", delta[21], " = 0")))) +
+  labs(x = "Parameter",
+       y = "Hazard rate") +
+  guides(color = guide_legend(title = NULL,
+                              keyheight = 0.2, 
+                              keywidth = 0.1,
+                              default.unit = "inch")) +
+  theme(legend.position = c(0.05, 0.95),
+        legend.justification = c("left", "top"),
+        legend.text.align = 0)
+ggsave("posteriors2.jpg", posteriors, width = 3, height = 2.5, units = "in", dpi = 600)
+```
+
+## Pathogen detection
+
+```{r}
+# Prediction curves
+Npred <- 300
+m.pred <- seq(0, 7.5, length.out = Npred)
+delta.pred <- array(NA, c(Npred, nrow(MEdraws)))
+lambda.pred <- array(NA, c(Npred, nrow(MEdraws)))
+for(i in 1:Npred){
+  delta.pred[i,] <- 1 - (1 - MEdraws$`r.delta`) ^ m.pred[i]
+  lambda.pred[i,] <- 1 - (1 - MEdraws$`r.lambda`) ^ m.pred[i]
+}
+
+# delta
+fig.delta <- 
+  tibble(pred = c(delta.pred),
+         load = rep(m.pred, nrow(MEdraws))) |>
+  ggplot(aes(x = load)) +
+  stat_lineribbon(aes(y = pred),
+                  fill = "#df5a00",
+                  .width = 0.95,
+                  point_interval = median_qi,
+                  size = 0,
+                  alpha = 1/2) +
+  stat_lineribbon(aes(y = pred),
+                  color = "#df5a00",
+                  .width = 0,
+                  size = 2/3,
+                  alpha = 1) +
+  geom_rug(data = m,
+           color = "#df5a00",
+           size = 1/5,
+           alpha = 1/2,
+           length = unit(0.05, "npc")) +
+  scale_x_continuous(breaks = c(1:7),
+                     labels = function(x) {return(paste0("10^", x))},
+                     limits = c(0, 7.5),
+                     expand = c(0, 0)) +
+  scale_y_continuous(breaks = seq(0.2, 1, 0.2),
+                     expand = c(0, 0),
+                     limits = c(0, 1.0025)) +
+  labs(subtitle = expression(paste(bold("a   "), "Sampling process (swabs)")),
+       x = expression(paste(italic("Bd"), " load (individual)")),
+       y = expression(paste(italic("Bd"), " detection probability (", delta[22], ")")))
+       
+# lambda
+fig.lambda <- 
+  tibble(pred = c(lambda.pred),
+         load = rep(m.pred, nrow(MEdraws))) |>
+  ggplot(aes(x = load)) +
+  stat_lineribbon(aes(y = pred),
+                  fill = "#023059",
+                  .width = 0.95,
+                  point_interval = median_qi,
+                  size = 0,
+                  alpha = 1/2) +
+  stat_lineribbon(aes(y = pred),
+                  color = "#023059",
+                  .width = 0,
+                  size = 2/3,
+                  alpha = 1) +
+  geom_rug(data = n,
+           color = "#023059",
+           alpha = 0.5,
+           size = 0.2,
+           length = unit(0.05, "npc")) +
+  scale_x_continuous(breaks = c(1:7),
+                     labels = function(x) {return(paste0("10^", x))},
+                     limits = c(0, 7.5),
+                     expand = c(0, 0)) +
+  scale_y_continuous(breaks = seq(0.2, 1, 0.2),
+                     expand = c(0, 0),
+                     limits = c(0, 1.0025)) +
+  labs(subtitle = expression(paste(bold("b   "), "Diagnostic process (qPCR)")),
+       x = expression(paste(italic("Bd"), " load (swab)")),
+       y = expression(paste(italic("Bd"), " detection probability (", lambda[22], ")")))
+
+# Plot
+fig.detection <- 
+  fig.delta | fig.lambda +
+  theme(plot.tag = element_text(face = "bold", color = "#333333"),
+        axis.line = element_line(color = NA),
+        panel.border = element_rect(color = "#333333", fill = NA, size = 0.6),
+        axis.text.x = element_markdown())
+ggsave("fig-det.jpg", fig.detection, width = 6, height = 8/3, units = "in", dpi = 600)
+```
+
