@@ -60,11 +60,11 @@ me.nofp <- read_csv('mcmc-samples/MEdraws-dellam0.csv')
 
 1.  Hidden Markov models (HMMs) are broadly applicable hierarchical models that derive their utility from separating state processes from observation processes yielding the data. Multistate models such as mark-recapture and dynamic multistate occupancy models are HMMs that are frequently used in ecology. In their early formulations, states, such as pathogen infection status, were assumed to be perfectly observed without ambiguity. However, state uncertainty is a pervasive feature of many ecological studies, and multievent models were developed to explicitly account for it.
 
-2.  We developed a novel extended multievent mark-recapture model that incorporates state uncertainty at multiple levels of detection. Using a disease-structured example, both false-negative and false-positive state assignment errors are modeled at two levels of state assignment---the pathogen sampling process and the diagnostic process that samples are subjected to. We additionally describe methods to jointly model infection intensity to integrate heterogeneity in ecological parameters, such as survival, infection dynamics, and the pathogen detection processes. We provide code to simulate and analyze datasets with various underlying ecological processes and fit our model to a mark-recapture dataset of *Mixophyes fleayi* (Fleay's barred frog) infected with the amphibian chytrid fungus (*Batrachochytrium dendrobatidis*, *Bd*).
+2.  We developed a novel extended multievent mark-recapture model that incorporates state uncertainty at multiple levels of detection. Using a disease-structured example, both false-negative and false-positive state assignment errors are modeled at two levels of state assignment---the pathogen sampling process and the diagnostic process that samples are subjected to. We additionally describe methods to jointly model infection intensity to integrate heterogeneity in ecological parameters, such as mortality and infection dynamics, and the pathogen detection processes. We provide code to simulate and analyze datasets with various underlying ecological processes and fit our model to a mark-recapture dataset of *Mixophyes fleayi* (Fleay's barred frog) infected with the amphibian chytrid fungus (*Batrachochytrium dendrobatidis*, *Bd*).
 
 3.  In our case study, we found evidence for various state assignment errors: the sampling protocol performed poorly in detecting *Bd*, pathogen detection was highly dependent on infection intensity, and false-positives were non-negligible. Incorporating state uncertainty yielded significantly higher estimates of infection prevalence and 4--5 times lower rates of infection state transitions compared to those obtained from a traditional multistate model.
 
-4.  Our results highlight that incorporating state assignment errors improves inference on the ecological state process, especially when sensitivity and specificity of the state assignment processes are low. The general model structure can be applied to other HMMs, providing a foundation for modeling state uncertainty in related models.
+4.  Our results highlight that incorporating state assignment errors improves inference on the ecological process, especially when sensitivity and specificity of the state assignment processes are low. The general model structure can be applied to other HMMs, providing a foundation for modeling state uncertainty in related models. For disease-structured multistate models, we recommend conducting robust design surveys and collecting samples during each capture event to facilitate incorporating pathogen detection errors.
 
 **Keywords:** hidden Markov model, state uncertainty, multievent, mark-recapture, Bayesian, hierarchical model, *Batrachochytrium dendrobatidis*
 
@@ -271,9 +271,7 @@ Matthijs Hollanders collected the data and conceived the model idea; Matthijs Ho
 
 # Data availability
 
-Data and code to analyse the *M. fleayi* data are available on Dryad (https://doi.org/10.5061/dryad.s7h44j19h); they are also available, along with appendix files, on GitHub.
-
-Data used will be made available at Dryad and GitHub, along with all code.
+Data and code to analyse the *M. fleayi* data are available on Dryad ([https://doi.org/10.5061/dryad.s7h44j19h](https://doi.org/10.5061/dryad.s7h44j19h)); they are also available, along with appendix files, on GitHub ([https://github.com/mhollanders/multievent](https://github.com/mhollanders/multievent)).
 
 # Supporting information
 

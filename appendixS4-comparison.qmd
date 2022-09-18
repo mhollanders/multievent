@@ -1,12 +1,16 @@
 ---
 title: "Appendix S4. Multistate Arnason-Schwarz: Robust design vs. single survey"
-author: | 
+author: |
   | Matthijs Hollanders & J. Andrew Royle
   |
   | Manuscript title: Know what you don't know: Embracing state uncertainty in disease-structured multistate models
+  |
+  | Quarto doc: [https://github.com/mhollanders/multievent](https://github.com/mhollanders/multievent)
 format:
   pdf:
     toc: true
+    number-sections: true
+    fig-asp: 0.8
 editor_options:
   chunk_output_type: console
 bibliography: multievent.bib
@@ -37,7 +41,7 @@ options(scipen = 999, digits = 3)
 
 # Introduction
 
-We simulate multistate mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993; @pradel2005] data for animals with two alive states using R 4.2.1 [@rcoreteam2022]. We generate two types of capture histories: (1) robust design, with multiple secondary surveys during primary occasions of assumed closure [@pollock1982], and (2) "traditional", consisting of a series of single surveys. We use Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017; @devalpine2022] to analyze each capture history. We then examine the traceplots and effective sample sizes of each model, demonstrating that estimation of robust design formulations is superior to traditional designs.
+We simulate multistate mark-recapture Arnason-Schwarz [@arnason1972; @arnason1973; @schwarz1993] data for animals with two alive states using R 4.2.1 [@rcoreteam2022]. We generate two types of capture histories: (1) robust design, with multiple secondary surveys during primary occasions of assumed closure [@pollock1982], and (2) "traditional", consisting of a series of single surveys. We use Bayesian inference and Markov chain Monte Carlo (MCMC) methods using NIMBLE 0.12.2 [@devalpine2017; @devalpine2022] to analyze each capture history. We then examine the traceplots and effective sample sizes of each model, demonstrating that estimation of robust design formulations is superior to traditional designs.
 
 # Simulating data
 
@@ -66,7 +70,7 @@ p2 <- 0.7     # Recapture probability of state 2
 
 ## Generating capture histories
 
-We create the transition probability matrices (TPMs) of the ecological and observation processes, and then run the simulations, which yields the capture histories (*y*) that we use as data for the models [@kery2012]. We simulate the same number of surveys for each model: `r n.prim` primary occasions with `r n.sec` secondary occasions for the robust design, and `r n.prim * n.sec` single surveys for the traditional. Note that this corresponds to `r n.prim - 1` ecological state transitions for the robust design, and `r n.prim * n.sec - 1` for the traditional.
+We create the transition probability matrices (TPMs) of the ecological and observation processes, and then run the simulations, which yields the capture histories (*y*) that we use as data for the models [@kery2012a]. We simulate the same number of surveys for each model: `r n.prim` primary occasions with `r n.sec` secondary occasions for the robust design, and `r n.prim * n.sec` single surveys for the traditional. Note that this corresponds to `r n.prim - 1` ecological state transitions for the robust design, and `r n.prim * n.sec - 1` for the traditional.
 
 ```{r}
 # Ecological process TPM
@@ -364,29 +368,41 @@ The effective sample sizes of parameters are higher in the robust design formula
 ```{r}
 #| echo: false
 #| output: true
+#| fig-asp: 0.8
 
 library(tidyverse)
 
 # Plot theme
-theme_set(theme_classic())
+theme_set(theme_classic(base_size = 12))
 theme_update(axis.ticks = element_line(color = "#333333"),
              axis.line = element_line(color = "#333333"),
              text = element_text(color = "#333333"),
              axis.text = element_text(color = "#333333"))
 
-# Plot
+# Plot details
 n.param <- 6
-tibble(rbind(rdMSsum, tMSsum)) %>%
-  mutate(parameter = factor(rep(monitors, 2), levels = monitors),
-         model = factor(c(rep("Robust design", n.param), rep("Traditional", n.param)))) %>%
+params <- c("phi[1]", "phi[2]", "psi[12]", "psi[21]", "italic(p)[1]", "italic(p)[2]")
+
+# Axis limits
+n.break <- 4
+ax.break <- round(max(rdMSsum$n.eff) / n.break, -2)
+
+# Plot
+tibble(rbind(rdMSsum, tMSsum)) |>
+  mutate(parameter = factor(rep(params, 2), levels = params),
+         model = factor(c(rep("Robust design", n.param), rep("Traditional", n.param)))) |>
   ggplot(aes(x = parameter)) +
   geom_col(aes(y = n.eff, fill = model),
            alpha = 3/4,
            position = position_dodge()) +
-  scale_y_continuous(limits = c(0, NA)) +
+  scale_x_discrete(labels = ggplot2:::parse_safe) +
+  scale_y_continuous(limits = c(0, ax.break * (n.break + 0.5)),
+                     breaks = seq(ax.break, n.break * ax.break, ax.break),
+                     expand = c(0, 0)) +
   scale_fill_manual(values = c("#a4260f", "grey50")) +
-  labs(title = paste0("Effective sample sizes after ", n.chains * n.iter, " MCMC samples"),
-       subtitle = "Robust design (red) vs. single survey (grey) multistate Arnason-Schwarz model",
+  coord_cartesian() +
+  labs(title = paste0("Effective sample size after ", n.chains * n.iter, " MCMC iterations"),
+       subtitle = "Robust design (red) vs. single survey (grey) multistate\nArnason-Schwarz model",
        x = "Parameter",
        y = "Effective sample size") +
   guides(fill = "none")
