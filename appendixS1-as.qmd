@@ -649,7 +649,7 @@ MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:n.burnin),]),
 
 ## Infection intensities
 
-We also assess how well infection intensities are recovered by the model. First, for each secondary that a recaptured individual returned at least one positive diagnostic run, we collect the true values and extract the estimates (posterior modes) for individual and sample infection intensities.
+We also assess how well infection intensities are recovered by the model. First, for each secondary that a recaptured individual returned at least one positive diagnostic run, we collect the true values and extract the estimates (posterior medians) for individual and sample infection intensities.
 
 ```{r}
 # Burn-in for intensities
