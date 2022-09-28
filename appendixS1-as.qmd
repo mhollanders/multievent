@@ -3,8 +3,8 @@ title: "Appendix S1. Extended multievent model: Arnason-Schwarz in continuous-ti
 author: | 
   | Matthijs Hollanders & J. Andrew Royle
   |
-  | Manuscript title: Know what you don't know: Embracing state uncertainty in disease-structured multistate models
   |
+  | Manuscript title: Know what you don't know: Embracing state uncertainty in disease-structured multistate models
   | Quarto doc: [https://github.com/mhollanders/multievent](https://github.com/mhollanders/multievent)
 format:
   pdf:
@@ -76,8 +76,8 @@ pi <- 0.4         # Probability of entering the study as infected
 phi1 <- 0.1       # Mortality hazard rate if uninfected
 phi.alpha <- 0.1  # Mortality hazard rate if infected (back-transformed intercept)
 phi.beta <- 0.3   # Effect of one unit of pathogen on mortality log hazard
-psi12 <- 1.0      # Hazard rate of gaining infection (force-of-infection)
-psi21 <- 0.5      # Hazard rate of clearing infection
+psi12 <- 0.7      # Hazard rate of gaining infection (force-of-infection)
+psi21 <- 0.4      # Hazard rate of clearing infection
 p1 <- 0.6         # Recapture probability if uninfected
 p2 <- 0.7         # Recapture probability if infected
 r.delta <- 0.4    # Probability of detecting one "unit" of pathogen on a sample
@@ -579,77 +579,82 @@ MEend - MEstart
 
 ## Traceplots and summary statistics
 
-We see that parameters mix well and that convergence is achieved quickly [@youngflesh2018mcmcvis]. Note that for `MCMCsummary`, we omitted the first `r n.burnin` MCMC samples as burn-in. The red dashed lines mark the simulation input parameter values. 
+We see that parameters mix well and that convergence is achieved quickly [@youngflesh2018]. Note that for `MCMCsummary()`, we omitted the first `r n.burnin` MCMC samples as burn-in. The red dashed lines mark the simulation input parameter values. 
 
 ```{r}
 #| output: true
 
-# Parameters
-params <- c(pi, phi1, phi.alpha, phi.beta, psi12, psi21, p1, p2, r.delta, delta21,
-            r.lambda, lambda21, mu, mu.sigma)
+# Simulation input
+sim <- c(pi, phi1, phi.alpha, phi.beta, psi12, psi21, p1, p2, r.delta, delta21,
+         r.lambda, lambda21, mu, mu.sigma)
 
 # Traceplots and summary
 library(MCMCvis)
 MEsum <- MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:n.burnin),]), 
-                     params = MEmons, HPD = T) |> print()
+                     params = MEmons, HPD = T, round = 3) |> print()
 MCMCtrace(MEsamples$samples, params = MEmons, Rhat = T, n.eff = T, ind = T, pdf = F,
-          gvals = params)
+          gvals = sim)
 ```
 
 \newpage
 
 ## Posterior distributions
 
-The input values of the simulation are recovered well within the posterior distributions of model parameters. We summarized posteriors as medians and 95% highest posterior density intervals (HPDIs) after omitting the first `r n.burnin` MCMC samples as burn-in.
+The input values of the simulation are recovered well within the posterior distributions of model parameters. We plot posteriors with medians and 95% highest posterior density intervals (HPDIs) after omitting the first `r n.burnin` MCMC samples as burn-in [@kay2022]. 
 \ 
 
 ```{r}
 #| echo: false
 #| output: true
-#| fig-asp: 0.8
+#| fig-width: 6.5
+#| fig-asp: 1
 
 library(tidyverse)
+library(ggdist)
 
 # Plot theme
-theme_set(theme_classic(base_size = 12))
+theme_set(theme_classic(base_size = 14))
 theme_update(axis.ticks = element_line(color = "#333333"),
              axis.line = element_line(color = "#333333"),
              text = element_text(color = "#333333"),
              axis.text = element_text(color = "#333333"))
 
-# Parameter names
-names <- c("pi", "phi[1]", "alpha[phi]", "beta[phi]", "psi[12]", "psi[21]", "italic(p)[1]", "italic(p)[2]", "italic(r)[delta]", "delta[21]", "italic(r)[lambda]", "lambda[21]", "mu", "sigma[mu]", "sigma[italic(m)]", "sigma[italic(n)]")
+# Parameter names and levels
+names <- c("delta[21]", "lambda[21]", "mu", "sigma[mu]", "sigma[italic(m)]", "sigma[italic(n)]", "italic(p)[1]", "italic(p)[2]", "alpha[phi]", "beta[phi]", "phi[1]", "pi", "psi[12]", "psi[21]", "italic(r)[delta]", "italic(r)[lambda]")
+levels <- c("pi", "phi[1]", "alpha[phi]", "beta[phi]", "psi[12]", "psi[21]", "italic(p)[1]", "italic(p)[2]", "italic(r)[delta]", "delta[21]", "italic(r)[lambda]", "lambda[21]", "mu", "sigma[mu]", "sigma[italic(m)]", "sigma[italic(n)]")
 
 # Plot
-MCMCsummary(lapply(MEsamples$samples, function(x) x[-(1:n.burnin),]), 
-            round = 3, params = MEmons, func = median, HPD = T) |>
-  mutate(parameter = factor(names, levels = names),
-         sim = params) |>
-  ggplot(aes(x = parameter)) +
-  geom_hline(yintercept = 0,
-             linetype = "dashed",
-             color = "grey50") +
-  geom_pointrange(aes(y = func, ymin = `95%_HPDL`, ymax = `95%_HPDU`),
-                  shape = 16,
-                  color = "#333333",
-                  position = position_nudge(x = 0.15)) +
-  geom_point(aes(y = sim),
+do.call(rbind, lapply(MEsamples$samples, function(x) x[-(1:n.burnin),])) |>
+  as_tibble() |>
+  set_names(names) |>
+  pivot_longer(everything(), names_to = "parameter", values_to = "iteration") |>
+  ggplot(aes(x = iteration, y = factor(parameter, levels = levels))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  stat_halfeye(point_interval = "median_hdci",
+               color = "#333333",
+               .width = 0.95,
+               shape = 16,
+               size = 1,
+               normalize = "groups",
+               slab_alpha = 4/5,
+               position = position_nudge(y = 1/10)) +
+  geom_point(data = tibble(parameter = factor(levels, levels = levels),
+                           iteration = sim),
              shape = 16,
              color = "#a4260f",
              alpha = 4/5,
-             position = position_nudge(x = -0.15)) +
-  labs(title = "Parameter estimates",
-       subtitle = "Posteriors (median and 95% HPDI, black) with input (red)",
-       x = "Parameter",
-       y = "Estimate") +
-  coord_flip() +
-  scale_x_discrete(limits = rev(names),
-                   labels = ggplot2:::parse_safe)
+             position = position_nudge(y = -1/10)) +
+  scale_y_discrete(labels = ggplot2:::parse_safe,
+                   limits = rev(levels)) +
+  labs(x = "Posterior distribution",
+       y = NULL)
 ```
+
+\newpage
 
 ## Infection intensities
 
-We also assess how well infection intensities are recovered by the model. First, for each secondary that a recaptured individual returned at least one positive diagnostic run, we collect the true values and extract the estimates (posterior medians) for individual and sample infection intensities.
+We also assess how well latent infection intensities are estimated. For each secondary that a recaptured individual returned at least one positive diagnostic run, we plot the estimates (posterior medians) for individual and sample infection intensities against the true values.
 
 ```{r}
 # Burn-in for intensities
@@ -676,12 +681,10 @@ m.est <- array(MCMCsummary(lapply(MEsamples2, function(x) x[-(1:n.burnin2),]),
                            params = "m")$`50%`, c(n.ind, n.prim))[z.est == 2]
 ```
 
-We plot posterior medians against true infection intensities for individuals and samples. The diagonal lines indicate perfect agreement between posteriors and the true values.
-\ 
-
 ```{r}
 #| echo: false
 #| output: true
+#| fig-width: 6.5
 
 # Intensities
 loads <- tibble(true = c(m.true, n.true),
@@ -707,8 +710,7 @@ m.plot <- loads |>
                      limits = c(0, ax.break * (n.break + 0.5)),
                      expand = c(0, 0)) +
   coord_fixed() +
-  labs(title = "Infection intensities",
-       subtitle = "Individuals",
+  labs(subtitle = expression(paste("Individuals (", italic("m"[it]), ")")),
        x = "True",
        y = "Posterior median")
 
@@ -727,7 +729,7 @@ n.plot <- loads |>
                      limits = c(0, ax.break * (n.break + 0.5)),
                      expand = c(0, 0)) +
   coord_fixed() +
-  labs(subtitle = "Samples",
+  labs(subtitle = expression(paste("Samples (", italic("n"[itk]), ")")),
        x = "True",
        y = "Posterior median")
 

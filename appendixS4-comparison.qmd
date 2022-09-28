@@ -342,7 +342,7 @@ print(tMSsum <- MCMCsummary(tMSdraws, monitors))
 
 ## Traceplots
 
-We see that mixing is much better in the robust design formulation, even with only `r n.sec` secondary surveys, and there appears to be considerably less correlation between parameters compared to the single survey model. The percent overlap between the prior and posterior distributions (PPO) is greater in the traditional model---particularly in the recapture and state transition probabilities---versus the robust design model, indicating reduced parameter identifiability in the traditional model [@gimenez2009]. Specifically, PPO of 35% is demonstrative of weak parameter identifiability. The red horizontal lines in the density plots are the prior distributions, and the red dashed lines mark the simulation input parameter values. The traditional model also takes longer to run with equal survey effort.
+We see that mixing is much better in the robust design formulation, even with only `r n.sec` secondary surveys, and there is considerably more posterior correlation between parameters in the single survey model. The percent overlap between the prior and posterior distributions (PPO) is greater in the traditional model---particularly in the recapture and state transition probabilities---versus the robust design model, indicative reduced parameter identifiability [@gimenez2009]. Specifically, PPO of 35% is demonstrative of weak parameter identifiability. The red horizontal lines in the density plots are the prior distributions, and the red dashed lines mark the simulation input parameter values. The traditional model also takes longer to run with equal survey effort.
 
 ```{r}
 #| output: true
@@ -361,19 +361,18 @@ MCMCtrace(tMSdraws, params = monitors, gvals = c(phi1, phi2, psi12, psi21, p1, p
 
 ## Effective sample sizes
 
-The effective sample sizes of parameters are higher in the robust design formulation.
-
-\ 
+The effective sample sizes of parameters after `r n.chains * n.iter` iterations are higher with the robust design (red) compared to the single survey (grey) design.
 
 ```{r}
 #| echo: false
 #| output: true
-#| fig-asp: 0.8
+#| fig-width: 6.5
+#| fig-asp: 0.618
 
 library(tidyverse)
 
 # Plot theme
-theme_set(theme_classic(base_size = 12))
+theme_set(theme_classic(base_size = 14))
 theme_update(axis.ticks = element_line(color = "#333333"),
              axis.line = element_line(color = "#333333"),
              text = element_text(color = "#333333"),
@@ -401,9 +400,7 @@ tibble(rbind(rdMSsum, tMSsum)) |>
                      expand = c(0, 0)) +
   scale_fill_manual(values = c("#a4260f", "grey50")) +
   coord_cartesian() +
-  labs(title = paste0("Effective sample size after ", n.chains * n.iter, " MCMC iterations"),
-       subtitle = "Robust design (red) vs. single survey (grey) multistate\nArnason-Schwarz model",
-       x = "Parameter",
+  labs(x = NULL,
        y = "Effective sample size") +
   guides(fill = "none")
 ```
